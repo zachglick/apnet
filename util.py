@@ -83,8 +83,8 @@ def get_dimer_data(path, pad=40):
     RB = df['RB'].tolist()
     ZA = df['ZA'].tolist()
     ZB = df['ZB'].tolist()
-    QA = np.array(df['TQA'].tolist())
-    QB = np.array(df['TQB'].tolist())
+    TQA = np.array(df['TQA'].tolist())
+    TQB = np.array(df['TQB'].tolist())
 
     for i in range(nmol):
         nAi = RA[i].shape[0]
@@ -118,46 +118,25 @@ def get_dimer_data(path, pad=40):
     print(ZA.shape)
     print(ZB.shape)
 
-    print(QA.shape)
-    print(QB.shape)
+    print(TQA.shape)
+    print(TQB.shape)
 
     print(n_atomsA.shape)
     print(n_atomsB.shape)
 
-    avg_chargeA = QA / n_atomsA
-    avg_chargeB = QB / n_atomsB
+    avg_chargeA = TQA / n_atomsA
+    avg_chargeB = TQB / n_atomsB
 
-    #return RA, RB, ZA, ZB, make_mask(avg_chargeA, n_atomsA, pad), make_mask(avg_chargeB, n_atomsB, pad)
-    #return RA, RB, ZA, ZB, avg_chargeA, avg_chargeB, n_atomsA, n_atomsB
-
-    sq_maskA = np.zeros((RA.shape[0], RA.shape[1], RA.shape[1]))
-    sq_maskB = np.zeros((RB.shape[0], RB.shape[1], RB.shape[1]))
-    for i in range(len(sq_maskA)):
-        for j in range(n_atomsA[i]):
-            for k in range(n_atomsA[i]):
-                sq_maskA[i][j][k] = 1
-        for j in range(n_atomsB[i]):
-            for k in range(n_atomsB[i]):
-                sq_maskB[i][j][k] = 1
-    sq_maskA = np.expand_dims(sq_maskA, axis=-1)
-    sq_maskB = np.expand_dims(sq_maskB, axis=-1)
-    q_initA = [avg_chargeA[i] * sq_maskA[i] for i in range(len(sq_maskA))]
-    q_initA = np.array(q_initA)
-    q_initB = [avg_chargeB[i] * sq_maskB[i] for i in range(len(sq_maskB))]
-    q_initB = np.array(q_initB)
-    return RA, RB, ZA, ZB, q_initA, q_initB
+    return RA, RB, ZA, ZB, make_mask(avg_chargeA, n_atomsA, pad), make_mask(avg_chargeB, n_atomsB, pad)
 
 def make_mask(Q, Natom, Npad=40):
 
     Nmol = Q.shape[0]
-
     sq_mask = np.zeros((Nmol, Npad, Npad))
     for i in range(Nmol):
-        for j in range(Natom[i]):
-            for k in range(Natom[i]):
-                sq_mask[i][j][k] = 1
+        sq_mask[i,:Natom[i],:Natom[i]] = Q[i]
     sq_mask = np.expand_dims(sq_mask, axis=-1)
-    return np.array([Q[i] * sq_mask[i] for i in range(Nmol)])
+    return sq_mask
 
 def mse_mp(y_true, y_pred):
     return K.mean(K.square(y_pred - y_true), axis=[-1,-2])

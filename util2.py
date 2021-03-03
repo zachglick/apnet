@@ -29,44 +29,42 @@ def pad_molecules(dimer, pad_dim):
     RB = [dimer[i][1] for i in range(N)]
     ZA = [dimer[i][2] for i in range(N)]
     ZB = [dimer[i][3] for i in range(N)]
-    QA = [dimer[i][4] for i in range(N)]
-    QB = [dimer[i][5] for i in range(N)]
+    aQA = np.array([dimer[i][4] for i in range(N)])
+    aQB = np.array([dimer[i][5] for i in range(N)])
+    QA = [dimer[i][6] for i in range(N)]
+    QB = [dimer[i][7] for i in range(N)]
 
     RA_pad = np.zeros((N, pad_dim, 3))
     RB_pad = np.zeros((N, pad_dim, 3))
     ZA_pad = np.zeros((N, pad_dim))
     ZB_pad = np.zeros((N, pad_dim))
+    aQA_pad = np.zeros((N, pad_dim, pad_dim, 1))
+    aQB_pad = np.zeros((N, pad_dim, pad_dim, 1))
     QA_pad = np.zeros((N, pad_dim, 10))
     QB_pad = np.zeros((N, pad_dim, 10))
 
     for i in range(N):
         natomA = len(ZA[i])
         natomB = len(ZB[i])
-        #print(ZA[i])
-        #print(RA[i].shape)
 
         assert natomA == len(RA[i])
         assert natomB == len(RB[i])
 
-        #print(RA_pad[i].shape)
-        #print(RA[i].shape)
         RA_pad[i,:natomA,:] = RA[i]
         RB_pad[i,:natomB,:] = RB[i]
 
         ZA_pad[i,:natomA] = ZA[i]
         ZB_pad[i,:natomB] = ZB[i]
 
-        #print(QA_pad[i].shape)
-        #print(QA[i].shape)
-        #print(QA[i])
-        #print(natomA)
-        #exit()
+        aQA_pad[i,:natomA,:natomA,0] = aQA[i]
+        aQB_pad[i,:natomB,:natomB,0] = aQB[i]
+
         QA[i] = QA[i][:natomA][:]
         QB[i] = QB[i][:natomB][:]
         QA_pad[i,:natomA,:] = QA[i]
         QB_pad[i,:natomB,:] = QB[i]
 
-    return RA_pad, RB_pad, ZA_pad, ZB_pad, QA_pad, QB_pad
+    return RA_pad, RB_pad, ZA_pad, ZB_pad, aQA_pad, aQB_pad, QA_pad, QB_pad
 
 def mse_mp(y_true, y_pred):
     return K.mean(K.square(y_pred - y_true), axis=[-1,-2])
@@ -223,13 +221,20 @@ def get_dimers(dataset):
     ZB = df['ZB'].tolist()
     RA = df['RA'].tolist()
     RB = df['RB'].tolist()
+    TQA = df['TQA'].tolist()
+    TQB = df['TQB'].tolist()
     QA = df['multipoles_A'].tolist()
     QB = df['multipoles_B'].tolist()
-    #print(QA)
-    #print(QA[0].shape)
-    #exit()
 
-    dimer = list(zip(RA, RB, ZA, ZB, QA, QB))
+    # number of atoms in the monomers
+    nA = [np.sum(za > 0) for za in ZA]
+    nB = [np.sum(zb > 0) for zb in ZB]
+
+    # average atomic charge of each monomer
+    aQA = [TQA[i] / nA[i] for i in range(len(nA))]
+    aQB = [TQB[i] / nB[i] for i in range(len(nB))]
+
+    dimer = list(zip(RA, RB, ZA, ZB, aQA, aQB, QA, QB))
 
     # extract interaction energy label (if specified for the datset)
     try:
@@ -420,7 +425,7 @@ def make_model(nZ, ACSF_nmu=43, APSF_nmu=21):
 
 @tf.function(experimental_relax_shapes=True)
 def predict_single(model, feat):
-    return model(feat)
+    return model(feat, training=False)
 
 
 @tf.function(experimental_relax_shapes=True)
