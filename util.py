@@ -1,154 +1,151 @@
 import os
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-import epnn
 import numpy as np
 import pandas as pd
+from scipy.spatial import distance_matrix
 
 import tensorflow as tf
-import tensorflow.keras.backend as K
 from tensorflow.keras.layers import Add, Concatenate, Dense, Embedding, Flatten, Input, InputLayer, Lambda, Layer, Reshape, Subtract
 
 tf.keras.backend.set_floatx('float64')
 
-def get_data(path, pad=40):
+import features
 
-    df = pd.read_pickle(path)
-    nmol = len(df.index)
-    R = df['R'].tolist()
-    Z = df['Z'].tolist()
-    y = df['cartesian_multipoles'].tolist()
-    h = df['valence_charges'].tolist()
-    v = df['valence_widths'].tolist()
+z_to_ind = {
+    1  : 0,
+    6  : 1,
+    7  : 2,
+    8  : 3,
+    9  : 4,
+    11 : 5,
+    15 : 6,
+    16 : 7,
+    17 : 8,
+    35 : 9,
+}
 
 
-    #h = [_.reshape(-1,1) * 0.0 for _ in h]
-    #v = [_.reshape(-1,1) * 0.0 for _ in v]
-    for i in range(nmol):
-        y[i] = y[i][:,:10]
+def int_to_onehot(arr):
+    """ arrs is a numpy array of integers w/ dims [NATOM]"""
+    assert len(arr.shape) == 1
+    arr2 = np.zeros((arr.shape[0], len(z_to_ind)), dtype=np.int)
+    for i, z in enumerate(arr):
+        if z > 0:
+            arr2[i, z_to_ind[z]] = 1
+    return arr2
 
-    for i in range(nmol):
-        ni = R[i].shape[0]
-    
-        tempR = np.zeros((pad, 3))
-        tempR[:ni] = R[i]
-        R[i] = tempR
-    
-        tempZ = np.zeros(pad).astype(int)
-        tempZ[:ni] = Z[i]
-        Z[i] = tempZ
+def inflate(GA, GB):
+    """ GA is the ACSFs of all monomer A atoms with dimensions [NATOMA x NMU x NZ]
+        GB is the ACSFs of all monomer B atoms with dimensions [NATOMB x NMU x NZ]
+        This function tiles GA and GB so that the first index is a pair of atoms
+        Returns GA_ and GB_ both with dimensions [(NATOMA * NATOMB) x NMU x NZ]
+        10/13/2020: Updated to also inflate multipoles, dimensions [NATOMA x 10]
+     """
+    nA, nB = GA.shape[0], GB.shape[0]
+    if len(GA.shape) == 3:
+        GA_ = np.expand_dims(GA, 1)
+        GA_ = np.tile(GA_, (1,nB,1,1))
+        GA_ = GA_.reshape(GA_.shape[0] * GA_.shape[1], GA_.shape[2], GA_.shape[3])
+        GB_ = np.expand_dims(GB, 1)
+        GB_ = np.tile(GB_, (1,nA,1,1))
+        GB_ = np.transpose(GB_, (1,0,2,3))
+        GB_ = GB_.reshape(GB_.shape[0] * GB_.shape[1], GB_.shape[2], GB_.shape[3])
+        return GA_, GB_
+    elif len(GA.shape) == 2:
+        GA_ = np.expand_dims(GA, 1)
+        GA_ = np.tile(GA_, (1,nB,1))
+        GA_ = GA_.reshape(GA_.shape[0] * GA_.shape[1], GA_.shape[2])
+        GB_ = np.expand_dims(GB, 1)
+        GB_ = np.tile(GB_, (1,nA,1))
+        GB_ = np.transpose(GB_, (1,0,2))
+        GB_ = GB_.reshape(GB_.shape[0] * GB_.shape[1], GB_.shape[2])
+        return GA_, GB_
 
-        #tempy = np.zeros((pad,12))
-        tempy = np.zeros((pad,10))
-        tempy[:ni] = y[i]
-        y[i] = tempy
-    
-    R = np.array(R)
-    Z = np.array(Z)
-    y = np.array(y)
 
-    n_atoms = [np.count_nonzero(Z[i]) for i in range(len(Z))]
-    n_atoms = np.array(n_atoms)
 
-    trace = np.sum(y[:,:,[4,7,9]], axis=2)
-    y[:,:,4] -= trace / 3.0
-    y[:,:,7] -= trace / 3.0
-    y[:,:,9] -= trace / 3.0
-    
-    #mol_charge = [np.sum(y[i], axis=1)[-1] for i in range(len(y))]
-    #mol_charge2 = [np.sum(y[i], axis=1)[0] for i in range(len(y))]
-    mol_charge = np.round(np.sum(np.array(y[:,:,0]), axis=1))
-    #print(mol_charge)
-    #print(mol_charge[:100])
-    #print(mol_charge2)
-    #print(np.array(y[:,:,0]).shape)
-    #exit()
-    avg_charge = mol_charge / n_atoms
-    #print(avg_charge[:100])
-    #exit()
-    sq_mask = np.zeros((R.shape[0], R.shape[1], R.shape[1]))
-    for i in range(len(sq_mask)):
-        for j in range(n_atoms[i]):
-            for k in range(n_atoms[i]):
-                sq_mask[i][j][k] = 1
-    sq_mask = np.expand_dims(sq_mask, axis=-1)
-    q_init = [avg_charge[i] * sq_mask[i] for i in range(len(sq_mask))]
-    q_init = np.array(q_init)
-    return R, Z, q_init, y
 
-def get_dimer_data(path, pad=40):
 
-    df = pd.read_pickle(path)
-    nmol = len(df.index)
-    RA = df['RA'].tolist()
-    RB = df['RB'].tolist()
-    ZA = df['ZA'].tolist()
-    ZB = df['ZB'].tolist()
-    TQA = np.array(df['TQA'].tolist())
-    TQB = np.array(df['TQB'].tolist())
+class MLP_layer(tf.keras.layers.Layer):
+    def __init__(self, nodes, out_dim=1, activation='relu', **kwargs):
+        self.nodes = nodes
+        self.layer_set = []
+        self.out_dim = out_dim
+        self.activation = activation
+        for num in nodes:
+            self.layer_set.append(Dense(num, activation=activation))
+        self.layer_set.append(Dense(out_dim, activation=None))
+        super(MLP_layer, self).__init__(**kwargs)
 
-    for i in range(nmol):
-        nAi = RA[i].shape[0]
-        nBi = RB[i].shape[0]
-    
-        tempRA = np.zeros((pad, 3))
-        tempRA[:nAi] = RA[i]
-        RA[i] = tempRA
-        tempRB = np.zeros((pad, 3))
-        tempRB[:nBi] = RB[i]
-        RB[i] = tempRB
-    
-        tempZA = np.zeros(pad).astype(int)
-        tempZA[:nAi] = ZA[i]
-        ZA[i] = tempZA
-        tempZB = np.zeros(pad).astype(int)
-        tempZB[:nBi] = ZB[i]
-        ZB[i] = tempZB
-    
-    RA = np.array(RA)
-    ZA = np.array(ZA)
-    RB = np.array(RB)
-    ZB = np.array(ZB)
+    def get_config(self):
+        config = super(MLP_layer, self).get_config()
+        config.update({
+            'nodes': self.nodes,
+            'layer_set': self.layer_set,
+            'out_dim': self.out_dim,
+            'activation': self.activation,
+        })
+        return config
 
-    n_atomsA = np.array([np.count_nonzero(ZA[i]) for i in range(len(ZA))])
-    n_atomsB = np.array([np.count_nonzero(ZB[i]) for i in range(len(ZB))])
+    @tf.function(experimental_relax_shapes=True)
+    def call(self, x):
+        for layer in self.layer_set:
+            x = layer(x)
+        return x
 
-    avg_chargeA = TQA / n_atomsA
-    avg_chargeB = TQB / n_atomsB
+class EPN_layer(tf.keras.layers.Layer):
+    """Special 'Electron Passing Network,' which retains conservation of electrons but allows non-local passing"""
 
-    return RA, RB, ZA, ZB, make_mask(avg_chargeA, n_atomsA, pad), make_mask(avg_chargeB, n_atomsB, pad)
+    def __init__(self, pass_fn=MLP_layer, T=3, **kwargs):
+        self.pass_fns = []
+        for t in range(T):
+            self.pass_fns.append(pass_fn([32,32]))
+        self.T = T
+        super(EPN_layer, self).__init__(**kwargs)
 
-def make_mask(Q, Natom, Npad=40):
+    def get_config(self):
+        config = super(EPN_layer, self).get_config()
+        config.update({
+            'pass_fns': self.pass_fns,
+            'T': self.T,
+        })
+        return config
 
-    Nmol = Q.shape[0]
-    sq_mask = np.zeros((Nmol, Npad, Npad))
-    for i in range(Nmol):
-        sq_mask[i,:Natom[i],:Natom[i]] = Q[i]
-    sq_mask = np.expand_dims(sq_mask, axis=-1)
-    return sq_mask
+    @tf.function(experimental_relax_shapes=True)
+    def call(self, h, e, q, mask):
+        tol = tf.constant(1e-8, dtype=tf.float64)
+        clip = tf.clip_by_value(e, clip_value_min=tol, clip_value_max=1e5)
+        largest_e = tf.reduce_max(clip, axis=-1)
+        is_near = tf.math.not_equal(largest_e, tol)
+        is_near = tf.cast(is_near, dtype=tf.float64)
 
-def mse_mp(y_true, y_pred):
-    return K.mean(K.square(y_pred - y_true), axis=[-1,-2])
+        natom = e.shape[1]
+        mask = tf.cast(mask, dtype=tf.float64)
+        mask_r = tf.tile(tf.expand_dims(mask, axis=-1), [1, 1, natom])
+        mask_c = tf.transpose(mask_r, [0, 2, 1])
+        exp_mask = mask_r * mask_c
+        for t in range(self.T):
+            self.pass_fn = self.pass_fns[t]
+            inp_atom_i = tf.concat([h, q], axis=-1)  # nmolec x natom x 9+32+1
 
-def mae_mp(y_true, y_pred):
-    if y_pred.shape[-1] == 3:
-        return K.mean(K.abs(y_pred - y_true), axis=[-1,-2])
-    else:
-        return K.mean(K.abs(y_pred - y_true), axis=-1)
+            inp_i = tf.tile(tf.expand_dims(inp_atom_i, axis=2), [1, 1, natom, 1]) # nmolec x natom x natom x 9+32+1
+            inp_j = tf.transpose(inp_i, [0, 2, 1, 3]) #nmolec x natom x natom x 9+32+1
+            
+            inp_ij_N = tf.concat([inp_i, inp_j, e], axis=-1) #nmolec x natom x natom x 9*2 + 32*2 + 1*2 + 32
+            inp_ij_T = tf.concat([inp_j, inp_i, e], axis=-1) #nmolec x natom x natom x 9*2 + 32*2 + 1*2 + 32
 
-def rotation_matrix(n):
-    """ returns n rotation matrices for transformations in 3D cartesian space 
-        each rotation matrix is generated uniformly at random
-        output is an ndarray of dim n x 3 x 3
-    """
+            flat_inp_ij = tf.reshape(inp_ij_N, [-1, inp_ij_N.shape[-1]])
+            flat_inp_ji = tf.reshape(inp_ij_T, [-1, inp_ij_T.shape[-1]])
+            elec_ij_flat = self.pass_fn(flat_inp_ij)
+            elec_ji_flat = self.pass_fn(flat_inp_ji)
 
-    q = np.random.normal(loc=0.0, scale=1.0, size=(4,n))
-    q = q / np.linalg.norm(q, axis=0)
-    q2 = np.square(q)
-    R = np.array([ [q2[0] + q2[1] - q2[2] - q2[3],  2*q[1]*q[2] - 2*q[0]*q[3],      2*q[1]*q[3] + 2*q[0]*q[2]     ], 
-                   [2*q[1]*q[2] + 2*q[0]*q[3],      q2[0] - q2[1] + q2[2] - q2[3],  2*q[2]*q[3] - 2*q[0]*q[1]     ], 
-                   [2*q[1]*q[3] - 2*q[0]*q[2],      2*q[2]*q[3] + 2*q[0]*q[1],      q2[0] - q2[1] - q2[2] + q2[3] ],])
+            elec_ij = tf.reshape(elec_ij_flat, [-1, natom, natom])
+            elec_ji = tf.reshape(elec_ji_flat, [-1, natom, natom])
 
-    return np.transpose(R, [2,0,1])
+            antisym_pass = 0.5 * (elec_ij - elec_ji) * exp_mask * is_near
+
+            q += tf.expand_dims(tf.reduce_sum(antisym_pass, axis=2), axis=-1)
+
+        return q
 
 class RBFLayer(Layer):
     def __init__(self, mus, etas, **kwargs):
@@ -193,70 +190,7 @@ class RBFLayer(Layer):
 
         return x_
 
-class RotationGenerator(tf.keras.utils.Sequence):
-    """generates rotated molecule data"""
-
-    def __init__(self, R, Z, mol_charge, y, batch_size=32, shuffle=True):
-        self.R = R # nmol x natom x 3
-        self.Z = Z # nmol x natom
-        self.mol_charge = mol_charge
-        self.y = y # nmol x natom x 10
-        self.batch_size = batch_size
-        self.shuffle = shuffle
-
-        self.nmol = R.shape[0]
-        self.natom = R.shape[1]
-        self.mol_inds = np.arange(self.nmol)
-
-        self.on_epoch_end()
-
-    def __len__(self):
-        """number of batches per epoch"""
-        return int(np.floor(self.nmol / self.batch_size))
-
-    def __getitem__(self, index):
-        """generate one batch of data"""
-        ind_start = index * self.batch_size
-        ind_end = (index + 1) * self.batch_size
-        batch_inds = self.mol_inds[ind_start:ind_end]
-
-        R_batch = self.R[batch_inds]
-        Z_batch = self.Z[batch_inds]
-        Q_batch = self.mol_charge[batch_inds]
-
-        # monopole
-        y_batch = self.y[batch_inds][:,:,0]
-
-        # dipole (mu_x, mu_y, mu_z)
-        y_i_batch = self.y[batch_inds][:,:,1:4]
-
-        # quadrupole diagonal (Q_xx, Q_yy, Q_zz)
-        y_ii_batch = self.y[batch_inds][:,:,[4,7,9]]
-
-        # quadrupole off-diagonal (Q_xy, Q_xz, Q_yz)
-        y_ij_batch = self.y[batch_inds][:,:,[5,6,8]]
-
-        return [R_batch, Z_batch, Q_batch], [y_batch, y_i_batch, y_ii_batch, y_ij_batch]
-
-    def on_epoch_end(self):
-        """Updates indexes and perform random rotations after each epoch"""
-        if self.shuffle == True:
-            np.random.shuffle(self.mol_inds)
-        M = rotation_matrix(self.nmol)
-        for i in range(self.nmol):
-            for j in range(self.natom):
-
-                self.R[i,j] = M[i] @ self.R[i,j]
-
-                mu = self.y[i,j][1:4]
-                mu = M[i] @ mu
-                self.y[i,j][1:4] = mu
-
-                Q = self.y[i,j][[4,5,6,5,7,8,6,8,9]].reshape(3,3)
-                Q = M[i] @ Q @ M[i].T
-                self.y[i,j][4:10] = Q.flatten()[[0,1,2,4,5,8]]
-
-def get_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
+def make_atom_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
 
     # cartesian coordinate input
     input_R = Input(shape=(natom, 3), ragged=False, dtype=tf.float64, name='input_R')                               # nmol x natom x 3
@@ -409,8 +343,8 @@ def get_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
         h_ii_list.append(h_ii_)
         h_ij_list.append(h_ij_)
 
-    epn_model = epnn.MLP_layer
-    y_ = epnn.EPN_layer(epn_model, T=nmessage)(h_list[-1], e_, q_, mask)
+    epn_model = MLP_layer
+    y_ = EPN_layer(epn_model, T=nmessage)(h_list[-1], e_, q_, mask)
     
     new_shape = [tf.shape(y_)[0], y_.shape[1]]
     y_ = tf.reshape(y_, new_shape)
@@ -488,3 +422,237 @@ def get_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
     model = tf.keras.Model([input_R, input_Z, input_Q], output)
 
     return model
+
+
+
+
+
+
+def get_dimers(dataset):
+    """
+    Get molecular dimer (atoms and coordinates) and SAPT0 labels for a specified dataset
+
+    Args:
+        dataset: string corresponding to name of dataset
+
+    Returns tuple of 
+    Each element of the tuple is a 
+    """
+
+    # load dimer data
+    if not os.path.isfile(f'data/{dataset}.pkl'):
+       raise Exception(f'No dataset found at data/{dataset}.pkl')
+    df = pd.read_pickle(f'data/{dataset}.pkl')
+
+    # extract atom types and atomic coordinates
+    ZA = df['ZA'].tolist()
+    ZB = df['ZB'].tolist()
+    RA = df['RA'].tolist()
+    RB = df['RB'].tolist()
+    TQA = df['TQA'].tolist()
+    TQB = df['TQB'].tolist()
+    QA = df['multipoles_A'].tolist()
+    QB = df['multipoles_B'].tolist()
+
+    # number of atoms in the monomers
+    nA = [np.sum(za > 0) for za in ZA]
+    nB = [np.sum(zb > 0) for zb in ZB]
+
+    # average atomic charge of each monomer
+    aQA = [TQA[i] / nA[i] for i in range(len(nA))]
+    aQB = [TQB[i] / nB[i] for i in range(len(nB))]
+
+    dimer = list(zip(RA, RB, ZA, ZB, aQA, aQB, QA, QB))
+
+    # extract interaction energy label (if specified for the datset)
+    try:
+        sapt = df[['Elst_aug', 'Exch_aug', 'Ind_aug', 'Disp_aug']].to_numpy()
+    except:
+        sapt = None
+
+    return dimer, sapt
+
+
+def make_features(RA, RB, ZA, ZB, QA, QB, MTP, ACSF_nmu=43, APSF_nmu=21, ACSF_eta=100, APSF_eta=25, elst_cutoff=5.0):
+
+    nA = RA.shape[0]
+    nB = RB.shape[0]
+                                                        
+    GA, GB, IA, IB = features.calculate_dimer(RA, RB, ZA, ZB)
+    GA, GB = inflate(GA, GB)
+    QA, QB = inflate(QA, QB)
+
+    # append 1/D and cutoff to D
+    RAB = distance_matrix(RA, RB)
+    mask = (RAB <= elst_cutoff).astype(np.float64)
+    cutoff = 0.5 * (np.cos(np.pi * RAB / elst_cutoff) + 1) * mask
+    RAB = np.stack([RAB, 1.0 / RAB, cutoff], axis=-1)
+
+    # append onehot(Z) to Z
+    ZA = np.concatenate([ZA.reshape(-1,1), int_to_onehot(ZA)], axis=1)
+    ZB = np.concatenate([ZB.reshape(-1,1), int_to_onehot(ZB)], axis=1)
+
+    # tile ZA by atoms in monomer B and vice versa
+    ZA = np.expand_dims(ZA, axis=1)
+    ZA = np.tile(ZA, (1, nB, 1))
+    ZB = np.expand_dims(ZB, axis=0)
+    ZB = np.tile(ZB, (nA,1,1))
+
+
+    #ZA = ZA.astype(float)
+    #ZB = ZA.astype(float)
+
+    # flatten the NA, NB indices
+    ZA = ZA.reshape((-1,) + ZA.shape[2:]) 
+    ZB = ZB.reshape((-1,) + ZB.shape[2:]) 
+    RAB = RAB.reshape((-1,) + RAB.shape[2:])
+    IA = IA.reshape((-1,) + IA.shape[2:])
+    IB = IB.reshape((-1,) + IB.shape[2:])
+    MTP = np.expand_dims(MTP.reshape((-1,)), axis=-1)
+ 
+    # APSF is already made per atom pair 
+    # We won't tile ACSFs (which are atomic) into atom pairs b/c memory, do it at runtime instead
+
+    # these are the final shapes:
+    # ZA[i]  shape: NA * NB x (NZ + 1)
+    # ZB[i]  shape: NA * NB x (NZ + 1)
+    # GA[i]  shape: NA x NMU1 x NZ
+    # GB[i]  shape: NB x NMU1 x NZ
+    # IA[i]  shape: NA * NB x NMU2 x NZ
+    # IB[i]  shape: NA * NB x NMU2 x NZ
+    # RAB[i] shape: NA * NB x 3
+    # y[i]   scalar
+
+    return (ZA, ZB, RAB, GA, GB, IA, IB, QA, QB, MTP)
+
+
+def make_model(nZ, ACSF_nmu=43, APSF_nmu=21):
+    """
+    Returns a keras model for atomic pairwise intermolecular energy predictions
+    """
+
+    # These three parameters could be experimented with in the future
+    # Preliminary tests suggest they aren't that important
+    APSF_nodes = 50
+    ACSF_nodes = 100
+    dense_nodes = 128
+
+    # encoded atomic numbers
+    input_layerZA = tf.keras.Input(shape=(nZ+1,), dtype='float64')
+    input_layerZB = tf.keras.Input(shape=(nZ+1,), dtype='float64')
+
+    # atom centered symmetry functions
+    input_layerGA = tf.keras.Input(shape=(ACSF_nmu,nZ), dtype='float64')
+    input_layerGB = tf.keras.Input(shape=(ACSF_nmu,nZ), dtype='float64')
+
+    # atom pair symmetry functions
+    input_layerIA = tf.keras.Input(shape=(APSF_nmu,nZ), dtype='float64')
+    input_layerIB = tf.keras.Input(shape=(APSF_nmu,nZ), dtype='float64')
+
+    # multipoles
+    input_layerQA = tf.keras.Input(shape=(10), dtype='float64')
+    input_layerQB = tf.keras.Input(shape=(10), dtype='float64')
+
+    # multipole electrostatics
+    input_layerMTP = tf.keras.Input(shape=(1), dtype='float64')
+
+    # interatomic distance in angstrom
+    # r, 1/r, and the cutoff function are all passed in, which is redundant but simplifies the code
+    input_layerR = tf.keras.Input(shape=(3,), dtype='float64')
+
+    output_layers = []
+
+    for component_ind, component_name in enumerate(['elst', 'exch', 'ind', 'disp']):
+        # flatten the symmetry functions
+        GA = tf.keras.layers.Flatten()(input_layerGA)
+        GB = tf.keras.layers.Flatten()(input_layerGB)
+        IA = tf.keras.layers.Flatten()(input_layerIA)
+        IB = tf.keras.layers.Flatten()(input_layerIB)
+
+        # encode the concatenation of the element and ACSF into a smaller fixed-length vector
+        dense_r = tf.keras.layers.Dense(ACSF_nodes, activation='relu', name=f'{component_name}_dense_r')
+        GA = tf.keras.layers.Concatenate()([input_layerZA, GA])
+        GA = dense_r(GA)
+        GB = tf.keras.layers.Concatenate()([input_layerZB, GB])
+        GB = dense_r(GB)
+
+        # encode the concatenation of the element and APSF into a smaller fixed-length vector
+        dense_i = tf.keras.layers.Dense(APSF_nodes, activation='relu', name=f'{component_name}_dense_i')
+        IA = tf.keras.layers.Concatenate()([input_layerZA, IA])
+        IA = dense_i(IA)
+        IB = tf.keras.layers.Concatenate()([input_layerZB, IB])
+        IB = dense_i(IB)
+
+        # concatenate the atom centered and atom pair symmetry functions
+        GA = tf.keras.layers.Concatenate()([GA, IA])
+        GB = tf.keras.layers.Concatenate()([GB, IB])
+
+        # concatenate with atom type and distance
+        # this is the final input into the feed-forward NN
+        AB_ = tf.keras.layers.Concatenate()([input_layerZA, input_layerZB, input_layerR, GA, GB, input_layerMTP])
+        BA_ = tf.keras.layers.Concatenate()([input_layerZB, input_layerZA, input_layerR, GB, GA, input_layerMTP])
+
+        # simple feed-forward NN with three dense layers
+        dense_1 = tf.keras.layers.Dense(dense_nodes, activation='relu', name=f'{component_name}_dense_1')
+        dense_2 = tf.keras.layers.Dense(dense_nodes, activation='relu', name=f'{component_name}_dense_2')
+        dense_3 = tf.keras.layers.Dense(dense_nodes, activation='relu', name=f'{component_name}_dense_3')
+        linear = tf.keras.layers.Dense(1, activation='linear', name=f'{component_name}_linear', use_bias=False)
+
+        AB_ = dense_1(AB_)
+        AB_ = dense_2(AB_)
+        AB_ = dense_3(AB_)
+        AB_ = linear(AB_)
+
+        BA_ = dense_1(BA_)
+        BA_ = dense_2(BA_)
+        BA_ = dense_3(BA_)
+        BA_ = linear(BA_)
+
+        # symmetrize with respect to A, B
+        output_layer = tf.keras.layers.add([AB_, BA_])
+
+        # if electrostatics, introduce switcthing function between scaled MTP and pure MTP
+        if component_name == 'elst':
+            # choose the following for the distance-scaled energy prediction model
+            #output_layer = tf.keras.layers.multiply([output_layer, input_layerR[:,1]])
+
+            # choose the following for the old additive implementation
+            #output_layer = tf.keras.layers.multiply([output_layer, input_layerR[:,1]])
+            #output_layer = tf.keras.layers.add([output_layer, input_layerMTP])
+            
+            # choose the following for additive + cutoff implementation (best?):
+            cutoff_fn = tf.expand_dims(input_layerR[:,2], -1)
+            output_layer = cutoff_fn * output_layer + input_layerMTP
+
+            # choose the following for NN-scaled + cutoff implementation:
+            #cutoff_fn = tf.expand_dims(input_layerR[:,2], -1)
+            #output_layer = cutoff_fn * output_layer * input_layerMTP + (1.0 - cutoff_fn) * input_layerMTP
+            
+            #ablation: simply choose the MTP
+            #output_layer = input_layerMTP
+
+        # else, simply normalize output by 1/r
+        else:
+            output_layer = tf.keras.layers.multiply([output_layer, input_layerR[:,1]])
+        
+        output_layers.append(output_layer)
+
+    output_layer = tf.keras.layers.Concatenate()(output_layers)
+    model = tf.keras.Model(inputs=[input_layerZA,
+                                   input_layerZB,
+                                   input_layerR,
+                                   input_layerGA,
+                                   input_layerGB, 
+                                   input_layerIA, 
+                                   input_layerIB,
+                                   input_layerQA,
+                                   input_layerQB,
+                                   input_layerMTP], outputs=output_layer)
+
+    return model
+
+
+@tf.function(experimental_relax_shapes=True)
+def predict_single(model, feat):
+    return model(feat, training=False)
+

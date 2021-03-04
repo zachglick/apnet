@@ -39,28 +39,6 @@ def cutoff(D, rc1=0.0, rc2=8.0):
     return C
 
 
-def cos_theta(R):
-    """ 
-    Calculates the cosine between all possible angles given a set of points.
-
-    Args:
-        R: cartesian coordinates of a monomer or dimer [NATOM x 3]
-
-    Returns three index tensor ct, where ct[i,j,k] is cosine(theta_jik).
-    The first index (i) is the center point of the angle.
-    i, j, and k index atoms in R.
-    """
-    
-    ct = np.zeros((R.shape[0], R.shape[0], R.shape[0]))
-    for i in range(R.shape[0]):
-        dRxyz = R - R[i]
-        dR1 = np.linalg.norm(dRxyz, axis=1)
-        num = np.inner(dRxyz, dRxyz)
-        denom = np.outer(dR1, dR1)
-        ct[i,:,:] = (num / denom)
-    return np.nan_to_num(ct)
-
-
 def cos_theta_im(RA, RB):
     """ 
     Calculates the cosine between all possible intermolecular angles given set of points in two monomers.
@@ -188,41 +166,6 @@ def apsfs(ZA, RA, ZB, RB, mus, eta=100.0, rc1=0.0, rc2=8.0):
 
     return G
 
-
-#def asyms(Z, R, mus, eta=100.0, rc1=0.0, rc2=8.0):
-#    """
-#    Calculates the angular atom centered symmetry functions of all atoms in a monomer
-#    """
-#
-#    natom = len(R)
-#    nmu = len(mus)
-#    ntype = len(zlist)
-#
-#    zindex = [charge_to_index[z] for z in Z]
-#
-#    D = distance_matrix(R, R)
-#    C = cutoff(D, rc1, rc2)
-#    A = cos_theta(R)
-#    G = np.zeros((natom, nmu, ntype, ntype))
-#
-#    for a_j in range(natom):
-#        e_j = zindex[a_j]
-#        if e_j > 100:
-#            continue
-#        for a_i, d_i in enumerate(D[a_j]):
-#            e_i = zindex[a_i]
-#            if d_i > rc2 or e_i > 100:
-#                continue
-#            for a_k, d_k in enumerate(D[a_j]):
-#                e_k = zindex[a_k]
-#                if d_k > rc2 or e_k > 100:
-#                    continue
-#                c_th = A[a_j, a_i, a_k]
-#                G[a_j,:,e_i,e_k] += np.exp(-1.0 * np.square(c_th - mus) * eta) * C[a_j, a_i] * C[a_j, a_k]
-#                if e_k != e_i:
-#                    G[a_j,:,e_k,e_i] += np.exp(-1.0 * np.square(c_th - mus) * eta) * C[a_j, a_k] * C[a_j, a_i]
-#    return G * 0.5
-
 def calculate_dimer(RA, RB, ZA, ZB, ACSF_nmu=43, APSF_nmu=21, ACSF_eta=100, APSF_eta=25):
 
     ACSF_mus = np.linspace(0.8, 5.0, ACSF_nmu)
@@ -234,81 +177,3 @@ def calculate_dimer(RA, RB, ZA, ZB, ACSF_nmu=43, APSF_nmu=21, ACSF_eta=100, APSF
     APSF_B_A = np.transpose(apsfs(ZB, RB, ZA, RA, APSF_mus, APSF_eta, 0.0, 8.0), axes=[1,0,2,3])
 
     return ACSF_A, ACSF_B, APSF_A_B, APSF_B_A
-
-def calculate(dataset, ACSF_nmu=43, APSF_nmu=21, ACSF_eta=100, APSF_eta=25):
-    """
-    Calculate and save ACSF and APSF features for a given dataset
-    """
-
-    df_dimers = pd.read_pickle(f'datasets/{dataset}/dimers.pkl')
-    N_dimer = len(df_dimers.index)
-
-    # get coordinates and atom types, catch common errors
-    try:
-        df_ACSF = df_dimers[['RA', 'RB', 'ZA', 'ZB']].copy(deep=True)
-        df_APSF = df_dimers[['RA', 'RB', 'ZA', 'ZB']].copy(deep=True)
-    except KeyError:
-        print('Error: Dataset needs fields "RA", "RB", "ZA", and "ZB" for every dimer\n')
-        raise
-
-    # TODO: experiment with these ranges
-    ACSF_mus = np.linspace(0.8, 5.0, ACSF_nmu)
-    APSF_mus = np.linspace(-1.0, 1.0, APSF_nmu)
-
-    ACSF_A = []
-    ACSF_B = []
-    APSF_A_B = []
-    APSF_B_A = []
-
-    counter = 0
-    start = time.time()
-    for index, row in df_dimers.iterrows():
-
-        RA = row['RA']
-        RB = row['RB']
-        ZA = row['ZA']
-        ZB = row['ZB']
-
-        ACSF_A.append(acsfs(ZA, RA, ACSF_mus, ACSF_eta, 0.0, 8.0))
-        ACSF_B.append(acsfs(ZB, RB, ACSF_mus, ACSF_eta, 0.0, 8.0))
-        APSF_A_B.append(apsfs(ZA, RA, ZB, RB, APSF_mus, APSF_eta, 0.0, 8.0))
-        APSF_B_A.append(np.transpose(apsfs(ZB, RB, ZA, RA, APSF_mus, APSF_eta, 0.0, 8.0), axes=[1,0,2,3]))
-
-        if (counter+1) % 500 == 0:
-            dt = time.time() - start
-            rate = (counter + 1) / dt
-            print(f'{(counter+1):5d} of {N_dimer:5d} dimers done in {int(dt):6d} s ({int(rate)} dimers / s)')
-        counter += 1
-
-    df_ACSF['ACSF_A'] = ACSF_A
-    df_ACSF['ACSF_B'] = ACSF_B
-    df_APSF['APSF_A_B'] = APSF_A_B
-    df_APSF['APSF_B_A'] = APSF_B_A
-
-    df_ACSF.to_pickle(f'datasets/{dataset}/ACSF_{ACSF_nmu}_{ACSF_eta}.pkl')
-    df_APSF.to_pickle(f'datasets/{dataset}/APSF_{APSF_nmu}_{APSF_eta}.pkl')
-
-if __name__ == '__main__':
-        
-    df_dimers = pd.read_pickle(f'datasets/nma-training/dimers.pkl')
-    N_dimer = len(df_dimers.index)
-    ACSF_nmu=43
-    APSF_nmu=21
-    ACSF_eta=100
-    APSF_eta=25
-
-    data_dimers = list(zip(df_dimers['RA'], df_dimers['RB'], df_dimers['ZA'], df_dimers['ZB']))
-
-    start = time.time()
-    #for i, datum in enumerate(data_dimers):
-    #    #if ((i + 1) % 50) == 0:
-    #    #    dt = time.time() - start
-    #    #    rate = (i + 1) / dt
-    #    #    print(f'{(i+1):5d} of {N_dimer:5d} dimers done in {int(dt):6d} s ({int(rate)} dimers / s)')
-    #    calculate_dimer(*datum)
-    #print(time.time() - start)
-
-    start = time.time()
-    with Pool(processes=6) as pool:
-        feats = pool.starmap(calculate_dimer, data_dimers)
-    print(time.time() - start)
