@@ -112,18 +112,6 @@ def get_dimer_data(path, pad=40):
     n_atomsA = np.array([np.count_nonzero(ZA[i]) for i in range(len(ZA))])
     n_atomsB = np.array([np.count_nonzero(ZB[i]) for i in range(len(ZB))])
 
-    print(RA.shape)
-    print(RB.shape)
-
-    print(ZA.shape)
-    print(ZB.shape)
-
-    print(TQA.shape)
-    print(TQB.shape)
-
-    print(n_atomsA.shape)
-    print(n_atomsB.shape)
-
     avg_chargeA = TQA / n_atomsA
     avg_chargeB = TQB / n_atomsB
 
@@ -344,9 +332,9 @@ def get_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
 
         # flatten last two dimensions
         #new_shape = [tf.shape(h_next_)[0], h_next_.shape[1], h_next_.shape[2] * h_next_.shape[3]]
-        #h_next_ = tf.reshape(h_next_, new_shape)                                    # nmol x natom x nmu,nembed
+        #h_next_ = tf.reshape(h_next_, new_shape)                                   # nmol x natom x nmu,nembed
         new_shape = [h_next_.shape[1], h_next_.shape[2] * h_next_.shape[3]]
-        h_next_ = Reshape(new_shape)(h_next_)                                     # nmol x natom x nmu,nembed
+        h_next_ = Reshape(new_shape)(h_next_)                                       # nmol x natom x nmu,nembed
 
         # send though dense network to get new hidden state ("self interaction")
         h_next_ = Concatenate()([h_next_, h0_])
@@ -380,40 +368,40 @@ def get_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
 
         # flatten embedding dimensions and transpose
         #new_shape = [tf.shape(h_i_)[0], h_i_.shape[1], h_i_.shape[2] * h_i_.shape[3], 3]
-        #h_i_ = tf.reshape(h_i_, new_shape)                                          # nmol x natom x nmu,nembed x 3
+        #h_i_ = tf.reshape(h_i_, new_shape)                                         # nmol x natom x nmu,nembed x 3
         new_shape = [h_i_.shape[1], h_i_.shape[2] * h_i_.shape[3], 3]
-        h_i_ = Reshape(new_shape)(h_i_)                                           # nmol x natom x nmu,nembed x 3
+        h_i_ = Reshape(new_shape)(h_i_)                                             # nmol x natom x nmu,nembed x 3
         h_i_ = tf.transpose(h_i_, [0, 1, 3, 2])                                     # nmol x natom x 3 x nmu,nembed
 
         #new_shape = [tf.shape(h_ii_)[0], h_ii_.shape[1], h_ii_.shape[2] * h_ii_.shape[3], 3]
-        #h_ii_ = tf.reshape(h_ii_, new_shape)                                        # nmol x natom x nmu,nembed x 3
+        #h_ii_ = tf.reshape(h_ii_, new_shape)                                       # nmol x natom x nmu,nembed x 3
         new_shape = [h_ii_.shape[1], h_ii_.shape[2] * h_ii_.shape[3], 3]
-        h_ii_ = Reshape(new_shape)(h_ii_)                                         # nmol x natom x nmu,nembed x 3
+        h_ii_ = Reshape(new_shape)(h_ii_)                                           # nmol x natom x nmu,nembed x 3
         h_ii_ = tf.transpose(h_ii_, [0, 1, 3, 2])                                   # nmol x natom x 3 x nmu,nembed
 
         #new_shape = [tf.shape(h_ij_)[0], h_ij_.shape[1], h_ij_.shape[2] * h_ij_.shape[3], 3]
-        #h_ij_ = tf.reshape(h_ij_, new_shape)                                        # nmol x natom x nmu,nembed x 3
+        #h_ij_ = tf.reshape(h_ij_, new_shape)                                       # nmol x natom x nmu,nembed x 3
         new_shape = [h_ij_.shape[1], h_ij_.shape[2] * h_ij_.shape[3], 3]
-        h_ij_ = Reshape(new_shape)(h_ij_)                                         # nmol x natom x nmu,nembed x 3
+        h_ij_ = Reshape(new_shape)(h_ij_)                                           # nmol x natom x nmu,nembed x 3
         h_ij_ = tf.transpose(h_ij_, [0, 1, 3, 2])                                   # nmol x natom x 3 x nmu,nembed
 
         # send though dense network to get new hidden state ("self interaction")
         h_i_ = Concatenate()([h_i_, h0_temp_])                                      # nmol x natom x 3 x nmu+1,nembed
-        h_i_ = Dense(nnodes[0], activation='relu')(h_i_)                               # nmol x natom x 3 x nnodes
-        h_i_ = Dense(nnodes[1], activation='relu')(h_i_)                               # nmol x natom x 3 x nnodes
-        h_i_ = Dense(nnodes[2], activation='relu')(h_i_)                               # nmol x natom x 3 x nnodes
+        h_i_ = Dense(nnodes[0], activation='relu')(h_i_)                            # nmol x natom x 3 x nnodes
+        h_i_ = Dense(nnodes[1], activation='relu')(h_i_)                            # nmol x natom x 3 x nnodes
+        h_i_ = Dense(nnodes[2], activation='relu')(h_i_)                            # nmol x natom x 3 x nnodes
         h_i_ = Dense(nembed, activation='linear')(h_i_)                             # nmol x natom x 3 x nembed
 
         h_ii_ = Concatenate()([h_ii_, h0_temp_])                                    # nmol x natom x 3 x nmu+1,nembed
-        h_ii_ = Dense(nnodes[0], activation='relu')(h_ii_)                             # nmol x natom x 3 x nnodes
-        h_ii_ = Dense(nnodes[1], activation='relu')(h_ii_)                             # nmol x natom x 3 x nnodes
-        h_ii_ = Dense(nnodes[2], activation='relu')(h_ii_)                             # nmol x natom x 3 x nnodes
+        h_ii_ = Dense(nnodes[0], activation='relu')(h_ii_)                          # nmol x natom x 3 x nnodes
+        h_ii_ = Dense(nnodes[1], activation='relu')(h_ii_)                          # nmol x natom x 3 x nnodes
+        h_ii_ = Dense(nnodes[2], activation='relu')(h_ii_)                          # nmol x natom x 3 x nnodes
         h_ii_ = Dense(nembed, activation='linear')(h_ii_)                           # nmol x natom x 3 x nembed
 
         h_ij_ = Concatenate()([h_ij_, h0_temp_])                                    # nmol x natom x 3 x nmu+1,nembed
-        h_ij_ = Dense(nnodes[0], activation='relu')(h_ij_)                             # nmol x natom x 3 x nnodes
-        h_ij_ = Dense(nnodes[1], activation='relu')(h_ij_)                             # nmol x natom x 3 x nnodes
-        h_ij_ = Dense(nnodes[2], activation='relu')(h_ij_)                             # nmol x natom x 3 x nnodes
+        h_ij_ = Dense(nnodes[0], activation='relu')(h_ij_)                          # nmol x natom x 3 x nnodes
+        h_ij_ = Dense(nnodes[1], activation='relu')(h_ij_)                          # nmol x natom x 3 x nnodes
+        h_ij_ = Dense(nnodes[2], activation='relu')(h_ij_)                          # nmol x natom x 3 x nnodes
         h_ij_ = Dense(nembed, activation='linear')(h_ij_)                           # nmol x natom x 3 x nembed
 
         # save these new rank-1 and rank-2 hidden states
@@ -422,7 +410,7 @@ def get_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
         h_ij_list.append(h_ij_)
 
     epn_model = epnn.MLP_layer
-    y_ = epnn.EPN_layer(epn_model, T=3)(h_list[-1], e_, q_, mask)
+    y_ = epnn.EPN_layer(epn_model, T=nmessage)(h_list[-1], e_, q_, mask)
     
     new_shape = [tf.shape(y_)[0], y_.shape[1]]
     y_ = tf.reshape(y_, new_shape)

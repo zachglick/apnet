@@ -176,6 +176,10 @@ def eval_dimer2(RA, RB, ZA, ZB, QA, QB):
 
 def eval_dimer(RA, RB, ZA, ZB, QA, QB):
 
+    #print()
+    #print(RA.shape, ZA.shape, QA.shape)
+    #print(RB.shape, ZB.shape, QB.shape)
+
     # Keep R in a.u. (molden convention)
     RA_temp = RA * 1.88973
     RB_temp = RB * 1.88973
@@ -186,6 +190,7 @@ def eval_dimer(RA, RB, ZA, ZB, QA, QB):
     maskB = (ZB >= 1)
 
     pair_mat = np.zeros((int(np.sum(maskA, axis=0)), int(np.sum(maskB, axis=0))))
+    #print(pair_mat.shape)
     #QA[:,0] -= maskA * np.sum(QA[:,0]) / np.sum(maskA)
     #QB[:,0] -= maskB * np.sum(QB[:,0]) / np.sum(maskB)
     #QA[:,0] -= np.average(QA[:,0]) 

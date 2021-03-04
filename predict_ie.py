@@ -9,6 +9,7 @@ import pandas as pd
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 tf.keras.backend.set_floatx('float64')
+#tf.keras.backend.set_learning_phase(0)
 
 import multipoles
 import util2
@@ -63,17 +64,18 @@ if __name__ == "__main__":
     APSF_eta = args.apsf_eta
 
     pad_dim = 26
-    nembed = 10
     nelem = 36
     
     # this is up to the user
     nembed = 10
     nnodes = [256,128,64]
+    #nnodes = [64,32,16]
     nmessage = 3
 
     # make the model 
-    mus = np.linspace(0.8, 5.0, 43)
-    etas = np.array([-100.0] * 43)
+    nrbf= 43
+    mus = np.linspace(0.8, 5.0, nrbf)
+    etas = np.array([-100.0] * nrbf)
 
     # ensure valid model path
     pair_modelpath = f'./pair_models/{pair_modelname}.h5'
@@ -95,16 +97,24 @@ if __name__ == "__main__":
     for atom_modelname in atom_modelnames:
         atom_models.append(util.get_model(mus, etas, pad_dim, nelem, nembed, nnodes, nmessage))
         atom_models[-1].load_weights(f'./atom_models/{atom_modelname}.hdf5')
+        #converter = tf.lite.TFLiteConverter.from_keras_model(atom_models[-1])
+        #atom_models[-1] = converter.convert()
         #atom_models[-1].call = tf.function(atom_models[-1].call, experimental_relax_shapes=True)
-        print(atom_models[-1].layers)
+        #print(atom_models[-1].layers)
 
     print(f'... Done in {time.time() - t_start:.1f} seconds\n')
 
     # load test data
     print("Loading Data...")
     t_start = time.time()
-    dimer, label = util2.get_dimers(data)
 
+    # dimer is a list of tuples
+    # dimer[i][0] = RA [nA x 3]
+    # dimer[i][1] = RB [nB x 3]
+    # dimer[i][2] = ZA [nA]
+    # dimer[i][3] = ZB [nB]
+
+    dimer, label = util2.get_dimers(data)
     N = len(dimer)
 
     #print(f'  Batch size:  {batch_size}')
@@ -114,106 +124,80 @@ if __name__ == "__main__":
     #print(f'  APSF eta:    {APSF_eta}')
     #print(f'  Dimer count: {N}')
 
-    RAt, RBt, ZAt, ZBt, aQAt, aQBt, QAt_ref, QBt_ref = util2.pad_molecules(dimer, pad_dim)
     print(f'... Done in {time.time() - t_start:.1f} seconds\n')
-
-    print('Predicting Multipoles...')
-    t_start = time.time()
-    qA_preds = []
-    muA_preds = []
-    Q_iiA_preds = []
-    Q_ijA_preds = []
-
-    qB_preds = []
-    muB_preds = []
-    Q_iiB_preds = []
-    Q_ijB_preds = []
-
-    for atom_model in atom_models:
-
-        #yA_pred = util2.predict_single(atom_model, [RAt, ZAt, aQAt])
-        #yA_pred = atom_model([RAt, ZAt, aQAt], training=False)
-        yA_pred = atom_model.predict([RAt, ZAt, aQAt], batch_size=4)
-        #yA_pred = atom_model.predict_on_batch([RAt, ZAt, aQAt])#batch_size=1)
-
-        qA_preds.append(yA_pred[0])
-        muA_preds.append(yA_pred[1])
-        Q_iiA_preds.append(yA_pred[2])
-        Q_ijA_preds.append(yA_pred[3])
-
-        #yB_pred = util2.predict_single(atom_model, [RBt, ZBt, aQBt])
-        #yB_pred = atom_model([RBt, ZBt, aQBt], training=False)
-        yB_pred = atom_model.predict([RBt, ZBt, aQBt], batch_size=4)
-        #yB_pred = atom_model.predict_on_batch([RBt, ZBt, aQBt])#batch_size=1)
-
-        qB_preds.append(yB_pred[0])
-        muB_preds.append(yB_pred[1])
-        Q_iiB_preds.append(yB_pred[2])
-        Q_ijB_preds.append(yB_pred[3])
-
-
-
-
-    
-
-        #qB_pred = []
-        #muB_pred = []
-        #Q_iiB_pred = []
-        #Q_ijB_pred = []
-
-        #for ib in range(len(RBt)):
-        #    yB_pred = atom_model([RBt[[ib]], ZBt[[ib]], aQBt[[ib]]], training=False)
-        #    qB_pred.append(yB_pred[0])
-        #    muB_pred.append(yB_pred[1])
-        #    Q_iiB_pred.append(yB_pred[2])
-        #    Q_ijB_pred.append(yB_pred[3])
-
-        #qB_preds.append(np.concatenate(qB_pred, axis=0))
-        #muB_preds.append(np.concatenate(muB_pred, axis=0))
-        #Q_iiB_preds.append(np.concatenate(Q_iiB_pred, axis=0))
-        #Q_ijB_preds.append(np.concatenate(Q_ijB_pred, axis=0))
-    
-    qA_avg = np.expand_dims(np.average(np.array(qA_preds), axis=0), axis=-1)
-    muA_avg = np.average(np.array(muA_preds), axis=0)
-    Q_iiA_avg = np.average(np.array(Q_iiA_preds), axis=0)
-    Q_ijA_avg = np.average(np.array(Q_ijA_preds), axis=0)
-    QAt = np.concatenate([qA_avg, muA_avg, Q_iiA_avg, Q_ijA_avg], axis=-1)
-
-    qB_avg = np.expand_dims(np.average(np.array(qB_preds), axis=0), axis=-1)
-    muB_avg = np.average(np.array(muB_preds), axis=0)
-    Q_iiB_avg = np.average(np.array(Q_iiB_preds), axis=0)
-    Q_ijB_avg = np.average(np.array(Q_ijB_preds), axis=0)
-    QBt = np.concatenate([qB_avg, muB_avg, Q_iiB_avg, Q_ijB_avg], axis=-1)
-    print(f'... Done in {time.time() - t_start:.1f} seconds\n')
-
-    print('Calculating multipole electrostatics...')
-    t_start = time.time()
-    elst_mtp_t = []
-    for i in range(N):
-        elst_mtp, pair_mtp = multipoles.eval_dimer(RAt[i], RBt[i], ZAt[i], ZBt[i], QAt[i], QBt[i])
-        elst_mtp_t.append(pair_mtp)
-    print(f'... Done in {time.time() - t_start:.1f} seconds\n')
-
-    for i, d in enumerate(dimer):
-        nA, nB = len(d[0]), len(d[1])
-        dimer[i] = (d[0], d[1], d[2], d[3], QAt[i,:nA,:], QBt[i,:nB,:], elst_mtp_t[i]) # charge only
 
     feature_time = 0.0
     yt_preds = []
-    yt_errs = [] # record testing error
+    yt_errs = []
 
-    print('Predicting Interaction Energies...')
+    print('Calculating multipole electrostatics...')
     t_start = time.time()
-    dimer_batches, label_batches = util2.make_batches(dimer, label, batch_size)
-    for dimer_batch, label_batch in zip(dimer_batches, label_batches):
-        feature_start = time.time()
-        feature_batch = [util2.make_features(*d) for d in dimer_batch]
-        feature_time += (time.time() - feature_start)
-        for ft, lt in zip(feature_batch, label_batch):
-            yt_pred = util2.predict_single(model, ft)
-            yt_pred = np.sum(yt_pred, axis=0)
-            yt_preds.append(yt_pred)
-            yt_errs.append(yt_pred - lt)
+
+    for i, d in enumerate(dimer):
+
+        nA, nB = len(d[0]), len(d[1])
+
+        yA_preds = []
+        yB_preds = []
+
+        RAti = np.zeros((1, pad_dim, 3))
+        RBti = np.zeros((1, pad_dim, 3))
+        RAti[0,:nA,:] = d[0] 
+        RBti[0,:nB,:] = d[1] 
+
+        ZAti = np.zeros((1, pad_dim))
+        ZBti = np.zeros((1, pad_dim))
+        ZAti[0,:nA] = d[2] 
+        ZBti[0,:nB] = d[3] 
+
+        aQAti = np.zeros((1, pad_dim, pad_dim, 1))
+        aQBti = np.zeros((1, pad_dim, pad_dim, 1))
+        aQAti[0,:nA,:nA,0] = d[4]
+        aQBti[0,:nB,:nB,0] = d[5]
+        
+        for atom_model in atom_models:
+
+            yA_pred = atom_model.predict_on_batch([RAti, ZAti, aQAti])
+            yB_pred = atom_model.predict_on_batch([RBti, ZBti, aQBti])
+
+            yA_pred = np.concatenate([np.expand_dims(yA_pred[0], axis=-1), yA_pred[1], yA_pred[2], yA_pred[3]], axis=-1)
+            yA_preds.append(yA_pred)
+
+            yB_pred = np.concatenate([np.expand_dims(yB_pred[0], axis=-1), yB_pred[1], yB_pred[2], yB_pred[3]], axis=-1)
+            yB_preds.append(yB_pred)
+
+        QAti = np.average(yA_preds, axis=0)
+        QBti = np.average(yB_preds, axis=0)
+
+        QAti = QAti[0,:nA,:]
+        QBti = QBti[0,:nB,:]
+
+        elst_mtp, pair_mtp = multipoles.eval_dimer(d[0], d[1], d[2], d[3], QAti, QBti)
+        dimer[i] = (d[0], d[1], d[2], d[3], QAti, QBti, pair_mtp)
+
+        features = util2.make_features(*dimer[i])
+
+        # these are pairwise
+        sapt_pred = util2.predict_single(model, features)
+        sapt_pred = np.sum(sapt_pred, axis=0)
+        yt_preds.append(sapt_pred)
+        yt_errs.append(sapt_pred - label[i])
+
+    #print(f'... Done in {time.time() - t_start:.1f} seconds\n')
+
+    #print('Predicting Interaction Energies...')
+    #t_start = time.time()
+    #dimer_batches, label_batches = util2.make_batches(dimer, label, batch_size)
+    #for dimer_batch, label_batch in zip(dimer_batches, label_batches):
+    #    feature_start = time.time()
+    #    feature_batch = [util2.make_features(*d) for d in dimer_batch]
+    #    feature_time += (time.time() - feature_start)
+    #    for ft, lt in zip(feature_batch, label_batch):
+    #        yt_pred = util2.predict_single(model, ft)
+    #        yt_pred = np.sum(yt_pred, axis=0)
+    #        yt_preds.append(yt_pred)
+    #        yt_errs.append(yt_pred - lt)
+    #print(f'... Features took {feature_time:.1f} seconds')
     print(f'... Done in {time.time() - t_start:.1f} seconds\n')
 
     yt_errs = np.concatenate(yt_errs).reshape(-1,4)
