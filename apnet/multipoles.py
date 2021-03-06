@@ -1,21 +1,7 @@
 import math
 import numpy as np
 import h5py
-
-elem_to_z = { 
-    'H'  : 1,
-    'B'  : 3,
-    'C'  : 6,
-    'N'  : 7,
-    'O'  : 8,
-    'F'  : 9,
-    'NA' : 11,
-    'P'  : 15, 
-    'S'  : 16, 
-    'CL' : 17, 
-    'SE' : 34, 
-    'BR' : 35, 
-}
+from apnet import constants
 
 def proc_molden(name):
     """ Get coordinates (a.u.) and atom types from a molden.
@@ -28,7 +14,7 @@ def proc_molden(name):
     Z = [line[0] for line in data]
 
     try:
-        Z = [elem_to_z[elem] for elem in Z]
+        Z = [constants.elem_to_z[elem] for elem in Z]
     except:
         print(name)
         return 0, 0

@@ -1,37 +1,26 @@
 import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '1'
 import numpy as np
 import pandas as pd
 from scipy.spatial import distance_matrix
+import qcelemental as qcel
 
 import tensorflow as tf
-from tensorflow.keras.layers import Add, Concatenate, Dense, Embedding, Flatten, Input, InputLayer, Lambda, Layer, Reshape, Subtract
+from tensorflow.keras.layers import Add, Concatenate, Dense, Embedding, Flatten, Input, Lambda, Layer, Reshape, Subtract
 
 tf.keras.backend.set_floatx('float64')
 
-import features
-
-z_to_ind = {
-    1  : 0,
-    6  : 1,
-    7  : 2,
-    8  : 3,
-    9  : 4,
-    11 : 5,
-    15 : 6,
-    16 : 7,
-    17 : 8,
-    35 : 9,
-}
+from apnet import features
+from apnet import constants
 
 
 def int_to_onehot(arr):
     """ arrs is a numpy array of integers w/ dims [NATOM]"""
     assert len(arr.shape) == 1
-    arr2 = np.zeros((arr.shape[0], len(z_to_ind)), dtype=np.int)
+    arr2 = np.zeros((arr.shape[0], len(constants.z_to_ind)), dtype=np.int)
     for i, z in enumerate(arr):
         if z > 0:
-            arr2[i, z_to_ind[z]] = 1
+            arr2[i, constants.z_to_ind[z]] = 1
     return arr2
 
 def inflate(GA, GB):
@@ -62,10 +51,7 @@ def inflate(GA, GB):
         return GA_, GB_
 
 
-
-
-
-class MLP_layer(tf.keras.layers.Layer):
+class MLP_layer(Layer):
     def __init__(self, nodes, out_dim=1, activation='relu', **kwargs):
         self.nodes = nodes
         self.layer_set = []
@@ -92,7 +78,7 @@ class MLP_layer(tf.keras.layers.Layer):
             x = layer(x)
         return x
 
-class EPN_layer(tf.keras.layers.Layer):
+class EPN_layer(Layer):
     """Special 'Electron Passing Network,' which retains conservation of electrons but allows non-local passing"""
 
     def __init__(self, pass_fn=MLP_layer, T=3, **kwargs):
@@ -423,11 +409,6 @@ def make_atom_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
 
     return model
 
-
-
-
-
-
 def get_dimers(dataset):
     """
     Get molecular dimer (atoms and coordinates) and SAPT0 labels for a specified dataset
@@ -451,8 +432,6 @@ def get_dimers(dataset):
     RB = df['RB'].tolist()
     TQA = df['TQA'].tolist()
     TQB = df['TQB'].tolist()
-    QA = df['multipoles_A'].tolist()
-    QB = df['multipoles_B'].tolist()
 
     # number of atoms in the monomers
     nA = [np.sum(za > 0) for za in ZA]
@@ -462,7 +441,7 @@ def get_dimers(dataset):
     aQA = [TQA[i] / nA[i] for i in range(len(nA))]
     aQB = [TQB[i] / nB[i] for i in range(len(nB))]
 
-    dimer = list(zip(RA, RB, ZA, ZB, aQA, aQB, QA, QB))
+    dimer = list(zip(RA, RB, ZA, ZB, aQA, aQB))
 
     # extract interaction energy label (if specified for the datset)
     try:
@@ -471,6 +450,7 @@ def get_dimers(dataset):
         sapt = None
 
     return dimer, sapt
+    #return dimer, None
 
 
 def make_features(RA, RB, ZA, ZB, QA, QB, MTP, ACSF_nmu=43, APSF_nmu=21, ACSF_eta=100, APSF_eta=25, elst_cutoff=5.0):
@@ -526,7 +506,7 @@ def make_features(RA, RB, ZA, ZB, QA, QB, MTP, ACSF_nmu=43, APSF_nmu=21, ACSF_et
     return (ZA, ZB, RAB, GA, GB, IA, IB, QA, QB, MTP)
 
 
-def make_model(nZ, ACSF_nmu=43, APSF_nmu=21):
+def make_pair_model(nZ, ACSF_nmu=43, APSF_nmu=21):
     """
     Returns a keras model for atomic pairwise intermolecular energy predictions
     """
@@ -651,8 +631,106 @@ def make_model(nZ, ACSF_nmu=43, APSF_nmu=21):
 
     return model
 
+def qcel_to_data(dimer):
+    """ proper qcel mol to ML-ready numpy arrays """
 
-@tf.function(experimental_relax_shapes=True)
-def predict_single(model, feat):
-    return model(feat, training=False)
+    # this better be a dimer
+    assert len(dimer.fragments) == 2
+
+    ZA = dimer.symbols[dimer.fragments[0]]
+    ZB = dimer.symbols[dimer.fragments[1]]
+    ZA = np.array([constants.elem_to_z[za] for za in ZA])
+    ZB = np.array([constants.elem_to_z[zb] for zb in ZB])
+
+    RA = dimer.geometry[dimer.fragments[0]] * constants.au2ang
+    RB = dimer.geometry[dimer.fragments[1]] * constants.au2ang
+
+    nA = len(dimer.fragments[0])
+    nB = len(dimer.fragments[1])
+    aQA = dimer.fragment_charges[0] / nA
+    aQB = dimer.fragment_charges[1] / nB
+
+    return (RA, RB, ZA, ZB, aQA, aQB)
+
+def data_to_qcel(RA, RB, ZA, ZB, aQA, aQB):
+    """ ML-ready numpy arrays to qcel mol """
+
+    nA = RA.shape[0]
+    nB = RB.shape[0]
+
+    tQA = int(round(aQA * nA))
+    tQB = int(round(aQB * nB))
+
+    assert abs(tQA - aQA * nA) < 1e-6
+    assert abs(tQB - aQB * nB) < 1e-6
+
+    blockA = f"{tQA} {1}\n"
+    for ia in range(nA):
+        blockA += f"{constants.z_to_elem[ZA[ia]]} {RA[ia,0]} {RA[ia,1]} {RA[ia,2]}\n"
+
+    blockB = f"{tQB} {1}\n"
+    for ib in range(nB):
+        blockB += f"{constants.z_to_elem[ZB[ib]]} {RB[ib,0]} {RB[ib,1]} {RB[ib,2]}\n"
+
+    dimer = blockA + "--\n" + blockB + "no_com\nno_reorient\nunits angstrom"
+    dimer = qcel.models.Molecule.from_data(dimer)
+    return dimer
+
+def load_bms_dimer(fname):
+    lines = open(fname, 'r').readlines()
+
+    natom = int(lines[0].strip())
+    dimerinfo = (''.join(lines[1:-natom])).split(',')
+    geom = lines[-natom:]
+
+
+    nA = int(dimerinfo[-1])
+    nB = natom - nA
+    TQ = int(dimerinfo[1])
+    TQA = int(dimerinfo[2])
+    TQB = int(dimerinfo[3])
+    assert TQ == (TQA + TQB)
+
+    e_tot_aug = float(dimerinfo[14])
+    e_elst_aug = float(dimerinfo[15])
+    e_exch_aug = float(dimerinfo[16])
+    e_ind_aug = float(dimerinfo[17])
+    e_disp_aug = float(dimerinfo[18])
+
+    assert abs(e_tot_aug  - (e_elst_aug + e_exch_aug + e_ind_aug + e_disp_aug)) < 1e-6
+
+    blockA = f"{TQA} 1\n" + "".join(geom[:nA])
+    blockB = f"{TQB} 1\n" + "".join(geom[nA:])
+    dimer = blockA + "--\n" + blockB + "no_com\nno_reorient\nunits angstrom"
+    dimer = qcel.models.Molecule.from_data(dimer)
+
+    label = np.array([e_elst_aug, e_exch_aug, e_ind_aug, e_disp_aug])
+    return dimer, label
+
+
+if __name__ == "__main__":
+
+    mol = qcel.models.Molecule.from_data("""
+    0 1
+    O 0.000000 0.000000 0.100000
+    H 1.000000 0.000000 0.000000
+    CL 0.000000 1.000000 0.400000
+    --
+    0 1
+    O -4.100000 0.000000 0.000000
+    H -3.100000 0.000000 0.200000
+    O -4.100000 1.000000 0.100000
+    H -4.100000 2.000000 0.100000
+    no_com
+    no_reorient
+    units angstrom
+    """)
+    print(mol.to_string("psi4"))
+    print(mol)
+
+    data = qcel_to_data(mol)
+
+    mol2 = data_to_qcel(*data)
+    print(mol2.to_string("psi4"))
+    print(mol2)
 
