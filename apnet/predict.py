@@ -39,8 +39,7 @@ nmessage = 3
 nrbf= 43
 mus = np.linspace(0.8, 5.0, nrbf)
 etas = np.array([-100.0] * nrbf)
-#pair_modelnames = ['badhive', 'badhive', 'badhive']
-pair_modelnames = ['badhive']
+pair_modelnames = ['hive0', 'hive1', 'hive2', 'hive3', 'hive4']
 for pair_modelname in pair_modelnames:
     pair_modelpath = f'{ROOT_DIR}/pair_models/{pair_modelname}.h5'
     if not os.path.isfile(pair_modelpath):
@@ -53,29 +52,66 @@ for atom_modelname in atom_modelnames:
     if not os.path.isfile(atom_modelpath):
         raise Exception(f'No model exists at {atom_modelpath}')
 
-pair_models = []
+pair_models_all = []
 for pair_modelname in pair_modelnames:
-    pair_models.append(util.make_pair_model(nZ=nembed))
-    pair_models[-1].load_weights(f'{ROOT_DIR}/pair_models/{pair_modelname}.h5')
-    pair_models[-1].call = tf.function(pair_models[-1].call, experimental_relax_shapes=True)
+    pair_models_all.append(util.make_pair_model(nZ=nembed))
+    pair_models_all[-1].load_weights(f'{ROOT_DIR}/pair_models/{pair_modelname}.h5')
+    pair_models_all[-1].call = tf.function(pair_models_all[-1].call, experimental_relax_shapes=True)
 
-atom_models = []
+atom_models_all = []
 for atom_modelname in atom_modelnames:
-    atom_models.append(util.make_atom_model(mus, etas, pad_dim, nelem, nembed, nnodes, nmessage))
-    atom_models[-1].load_weights(f'{ROOT_DIR}/atom_models/{atom_modelname}.hdf5')
-    atom_models[-1].call = tf.function(atom_models[-1].call, experimental_relax_shapes=True)
+    atom_models_all.append(util.make_atom_model(mus, etas, pad_dim, nelem, nembed, nnodes, nmessage))
+    atom_models_all[-1].load_weights(f'{ROOT_DIR}/atom_models/{atom_modelname}.hdf5')
+    atom_models_all[-1].call = tf.function(atom_models_all[-1].call, experimental_relax_shapes=True)
 #print(f'... Done in {time.time() - t_start:.1f} seconds\n')
 
 
 
 
-def predict_sapt(qcel_dimers):
-    """ Expect list of QCElemental Dimers or single dimer """
+def predict_sapt(qcel_dimers, use_ensemble=True, return_pairs=False):
+    """Predict SAPT Interaction Energies with AP-Net
+
+    Get a predicted interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
+    more dimers.
+
+    Parameters
+    ---------
+    qcel_dimers : qcelemental.model.Molecule or list of qcelemental.model.Molecule
+        One or more dimers to predict the interaction energy of. Each dimer must contain exactly
+        two molecular fragments.
+    use_ensemble: bool, optional
+        Do use an ensemble of 5 AP-Net models? This is more expensive, but improves the prediction
+        accuracy and also provides a prediction uncertainty
+    return_pairs: bool, optional
+        Do return the individual atom-pair interaction energies instead of dimer interaction
+        energies?
+
+    Returns
+    ------
+    predictions : numpy.ndarray or list of numpy.ndarray
+        A predicted SAPT interaction energy breakdown for each dimer in qcel_dimers (kcal / mol).
+        If return_pairs == False, each prediction is a numpy.ndarray with shape (5,).
+        If return_pairs == True, each prediction is a numpy.ndarray with shape (5, NA, NB).
+        The first dimension of length 5 indexes SAPT components:
+        [total, electrostatics, exchange, induction, dispersion]
+    uncertainties: numpy.ndarray or list of numpy.ndarray
+        A prediction uncertainty for each dimer in qcel_dimers (kcal / mol). 
+        Calculated as the standard deviation of predictions of 5 pretrained AP-Net models.
+        Has the same length/shape as the returned predictions.
+        If use_ensemble == False, this will not be returned.
+    """
 
     if isinstance(qcel_dimers, list):
         dimers = [util.qcel_to_data(dimer) for dimer in qcel_dimers]
     else:
         dimers = [util.qcel_to_data(qcel_dimers)]
+
+    if use_ensemble:
+        pair_models = pair_models_all
+        atom_models = atom_models_all
+    else:
+        pair_models = pair_models_all[:1]
+        atom_models = atom_models_all[:1]
 
     N = len(dimers)
 
@@ -84,13 +120,16 @@ def predict_sapt(qcel_dimers):
     pair_time = 0.0
 
     sapt_prds = []
+    sapt_stds = []
 
-    print('Making Predictions...')
+    #print('Making Predictions...')
     t_start = time.time()
 
     for i, d in enumerate(dimers):
 
         nA, nB = len(d[0]), len(d[1])
+        if nA > pad_dim or nB > pad_dim:
+            raise AssertionError(f"Monomer too large (for now), must be no more than {pad_dim} atoms")
 
         # get padded R/Z and total charge mask for CMPNN 
         RAti = np.zeros((1, pad_dim, 3))
@@ -140,20 +179,34 @@ def predict_sapt(qcel_dimers):
         features = util.make_features(d[0], d[1], d[2], d[3], mtpA, mtpB, pair_mtp)
 
         # predict short-range interaction energy
-        sapt_prd = [predict_dimer_sapt(pair_model, features) for pair_model in pair_models]
-        sapt_prd = np.average(sapt_prd, axis=0) # avg ensembles
-        sapt_prd = np.sum(sapt_prd, axis=0) # sum pairs
-        pair_time += time.time() - pair_start
+        # nensemble x npair x 4
+        sapt_prd_pair = np.array([predict_dimer_sapt(pair_model, features) for pair_model in pair_models])
+        sapt_prd_pair = np.concatenate([np.sum(sapt_prd_pair, axis=2, keepdims=True), sapt_prd_pair], axis=2)
+
+        if return_pairs:
+            sapt_prd = np.transpose(sapt_prd_pair, axes=(0,2,1))
+            sapt_prd = sapt_prd.reshape(-1,5,nA,nB) # nensemble x 5 x nA x nB
+        else:
+            sapt_prd = np.sum(sapt_prd_pair, axis=1) # nensemble x 5
+
+        # ensemble std and avg
+        sapt_std = np.std(sapt_prd, axis=0)
+        sapt_prd = np.average(sapt_prd, axis=0)
 
         sapt_prds.append(sapt_prd)
+        sapt_stds.append(sapt_std)
 
-    print(f'... Done in {time.time() - t_start:.1f} seconds\n')
-    print(f'  Multipoles Prediction:    {mtp_time:.1f} seconds')
-    print(f'  Multipole Electrostatics: {elst_time:.1f} seconds')
-    print(f'  SAPT Prediction:          {pair_time:.1f} seconds')
+        pair_time += time.time() - pair_start
 
-    sapt_prds = np.concatenate(sapt_prds).reshape(-1,4)
-    return sapt_prds
+    #print(f'... Done in {time.time() - t_start:.1f} seconds\n')
+    #print(f'  Multipoles Prediction:    {mtp_time:.1f} seconds')
+    #print(f'  Multipole Electrostatics: {elst_time:.1f} seconds')
+    #print(f'  SAPT Prediction:          {pair_time:.1f} seconds')
+
+    if use_ensemble:
+        return sapt_prds, sapt_stds
+    else:
+        return sapt_prds
 
 
 if __name__ == "__main__":

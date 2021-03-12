@@ -8,4 +8,4 @@ __credits__ = "Georgia Institute of Technology"
 
 
 from .predict import predict_sapt
-from .util import load_bms_dimer
+from .util import load_bms_dimer, load_pickle

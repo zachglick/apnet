@@ -635,7 +635,8 @@ def qcel_to_data(dimer):
     """ proper qcel mol to ML-ready numpy arrays """
 
     # this better be a dimer
-    assert len(dimer.fragments) == 2
+    if  len(dimer.fragments) != 2:
+        raise AssertionError(f"A dimer must have exactly 2 molecular fragments, found {len(dimer.fragments)}")
 
     ZA = dimer.symbols[dimer.fragments[0]]
     ZB = dimer.symbols[dimer.fragments[1]]
@@ -704,8 +705,36 @@ def load_bms_dimer(fname):
     dimer = blockA + "--\n" + blockB + "no_com\nno_reorient\nunits angstrom"
     dimer = qcel.models.Molecule.from_data(dimer)
 
-    label = np.array([e_elst_aug, e_exch_aug, e_ind_aug, e_disp_aug])
+    label = np.array([e_tot_aug, e_elst_aug, e_exch_aug, e_ind_aug, e_disp_aug])
     return dimer, label
+
+
+def load_pickle(path):
+
+    df = pd.read_pickle(path)
+    N = len(df.index)
+
+    RA = df.RA.tolist()
+    RB = df.RB.tolist()
+    ZA = df.ZA.tolist()
+    ZB = df.ZB.tolist()
+    TQA = df.TQA.tolist()
+    TQB = df.TQB.tolist()
+    aQA = [TQA[i] / np.sum(ZA[i] > 0) for i in range(N)]
+    aQB = [TQB[i] / np.sum(ZB[i] > 0) for i in range(N)]
+    labels = df[['Elst_aug', 'Exch_aug', 'Ind_aug', 'Disp_aug']].to_numpy()
+
+    import time
+
+    t_start = time.time()
+
+    dimers = []
+    for i in range(N):
+        dimers.append(data_to_qcel(RA[i], RB[i], ZA[i], ZB[i], aQA[i], aQB[i]))
+
+    print(time.time() - t_start)
+
+    return dimers, labels
 
 
 if __name__ == "__main__":
@@ -734,3 +763,6 @@ if __name__ == "__main__":
     print(mol2.to_string("psi4"))
     print(mol2)
 
+    dimers, labels = load_pickle("data/200_dimers.pkl")
+    #load_pickle("/theoryfs2/common/data/dimer-pickles/1600K_val_dimers-fixed.pkl")
+    print(labels)

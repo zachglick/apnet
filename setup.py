@@ -36,6 +36,7 @@ setup(
                  },
     install_requires=["numpy",
                       "scipy",
+                      "pandas",
                       "qcelemental",
                       "tensorflow>=2.2,<2.4",
                       ],
