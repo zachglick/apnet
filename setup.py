@@ -40,5 +40,6 @@ setup(
                       "qcelemental",
                       "tensorflow>=2.2,<2.4",
                       ],
+    # TODO: docs dependencies are: ["sphinx", "sphinx_rtd_theme",]
     python_requires=">=3.7", # TODO: is this too loose?
 )

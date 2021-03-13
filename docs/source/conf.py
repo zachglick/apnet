@@ -17,7 +17,7 @@
 
 # -- Project information -----------------------------------------------------
 
-project = 'apnet'
+project = 'AP-Net'
 copyright = '2021, Zach Glick'
 author = 'Zach Glick'
 
@@ -32,6 +32,8 @@ release = '0.0.1'
 # ones.
 extensions = [
 'sphinx.ext.autodoc',
+'sphinx.ext.intersphinx',
+'sphinx.ext.napoleon',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -48,9 +50,21 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'alabaster'
+html_theme = 'sphinx_rtd_theme'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
+
+# -- Options for intersphinx extension ---------------------------------------
+
+# Example configuration for intersphinx: refer to the Python standard library.
+intersphinx_mapping = {'python': ('https://docs.python.org/3.8', None),
+                       'numpy': ('https://docs.scipy.org/doc/numpy', None),
+                       'pandas': ('http://pandas.pydata.org/pandas-docs/dev', None),
+                       #'tensorflow': ('https://www.tensorflow.org/versions/r2.3/api_docs/python/tf', None),
+                       #'scipy': ('https://docs.scipy.org/doc/scipy/reference/', None),
+                       #'matplotlib': ('https://matplotlib.org/', None),
+                       'qcelemental': ('https://qcelemental.readthedocs.io/en/latest/', None)
+                      }

@@ -677,8 +677,28 @@ def data_to_qcel(RA, RB, ZA, ZB, aQA, aQB):
     dimer = qcel.models.Molecule.from_data(dimer)
     return dimer
 
-def load_bms_dimer(fname):
-    lines = open(fname, 'r').readlines()
+def load_bms_dimer(file):
+    """Load a single dimer from the BMS-xyz format
+
+    This function expects an xyz file in the format used with the 1.66M dimer dataset. 
+    The first line contains the number of atoms. 
+    The second line contains a comma-separated list of values such as the dimer name, dimer and monomer charges, SAPT labels (at various levels of theory), and number of atoms in the first monomer.
+    The next `natom` lines each contain an atomic symbol follwed by the x, y, and z cooordinates of the atom (Angstrom)
+
+
+    Parameters
+    ----------
+    file : str
+        The name of a file containing the xyz
+    
+    Returns
+    -------
+    dimer : :class:`~qcelemental.models.Molecule`
+    labels : :class:`~numpy.ndarray`
+        The SAPT0/aug-cc-pV(D+d)Z interaction energy labels: [total, electrostatics, exchange, induction, and dispersion].
+    """
+
+    lines = open(file, 'r').readlines()
 
     natom = int(lines[0].strip())
     dimerinfo = (''.join(lines[1:-natom])).split(',')
@@ -709,9 +729,33 @@ def load_bms_dimer(fname):
     return dimer, label
 
 
-def load_pickle(path):
+def load_pickle(file):
+    """Load multiple dimers from a :class:`~pandas.DataFrame`
 
-    df = pd.read_pickle(path)
+    Loads dimers from the :class:`~pandas.DataFrame` format associated with the original AP-Net publication.
+    Each row of the :class:`~pandas.DataFrame` corresponds to a molecular dimer.
+
+    The columns [`ZA`, `ZB`, `RA`, `RB`, `TQA`, `TQB`] are required.
+    `ZA` and `ZB` are atom types (:class:`~numpy.ndarray` of `int` with shape (`n`,)).
+    `RA` and `RB` are atomic positions in Angstrom (:class:`~numpy.ndarray` of `float` with shape (`n`,3.)).
+    `TQA` and `TQB` are monomer charges (int).
+
+    The columns [`Total_aug`, `Elst_aug`, `Exch_aug`, `Ind_aug`, and `Disp_aug`] are optional.
+    Each column describes SAPT0/aug-cc-pV(D+d)Z labels in kcal / mol (`float`).
+
+    Parameters
+    ----------
+    file : str
+        The name of a file containing the :class:`~pandas.DataFrame`
+    
+    Returns
+    -------
+    dimers : list of :class:`~qcelemental.models.Molecule`
+    labels : list of :class:`~numpy.ndarray` or None
+        None is returned if SAPT0 label columns are not present in the :class:`~pandas.DataFrame`
+    """
+
+    df = pd.read_pickle(file)
     N = len(df.index)
 
     RA = df.RA.tolist()
@@ -724,15 +768,9 @@ def load_pickle(path):
     aQB = [TQB[i] / np.sum(ZB[i] > 0) for i in range(N)]
     labels = df[['Elst_aug', 'Exch_aug', 'Ind_aug', 'Disp_aug']].to_numpy()
 
-    import time
-
-    t_start = time.time()
-
     dimers = []
     for i in range(N):
         dimers.append(data_to_qcel(RA[i], RB[i], ZA[i], ZB[i], aQA[i], aQB[i]))
-
-    print(time.time() - t_start)
 
     return dimers, labels
 

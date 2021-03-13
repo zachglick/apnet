@@ -68,43 +68,45 @@ for atom_modelname in atom_modelnames:
 
 
 
-def predict_sapt(qcel_dimers, use_ensemble=True, return_pairs=False):
-    """Predict SAPT Interaction Energies with AP-Net
+def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
+    """Predict interaction energies with a pre-trained AP-Net model
 
-    Get a predicted interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
-    more dimers.
+    Predicts the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
+    more molecular dimers. Predictions are decomposed into physically meaningful SAPT components.
+    (electrostatics, exchange, induction, and dispersion).
+
 
     Parameters
-    ---------
-    qcel_dimers : qcelemental.model.Molecule or list of qcelemental.model.Molecule
+    ----------
+    dimers : :class:`~qcelemental.models.Molecule` or list of :class:`~qcelemental.models.Molecule`
         One or more dimers to predict the interaction energy of. Each dimer must contain exactly
         two molecular fragments.
-    use_ensemble: bool, optional
+    use_ensemble: `bool`, optional
         Do use an ensemble of 5 AP-Net models? This is more expensive, but improves the prediction
         accuracy and also provides a prediction uncertainty
-    return_pairs: bool, optional
+    return_pairs: `bool`, optional
         Do return the individual atom-pair interaction energies instead of dimer interaction
         energies?
 
     Returns
-    ------
-    predictions : numpy.ndarray or list of numpy.ndarray
-        A predicted SAPT interaction energy breakdown for each dimer in qcel_dimers (kcal / mol).
+    -------
+    predictions : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        A predicted SAPT interaction energy breakdown for each dimer in dimers (kcal / mol).
         If return_pairs == False, each prediction is a numpy.ndarray with shape (5,).
         If return_pairs == True, each prediction is a numpy.ndarray with shape (5, NA, NB).
         The first dimension of length 5 indexes SAPT components:
         [total, electrostatics, exchange, induction, dispersion]
-    uncertainties: numpy.ndarray or list of numpy.ndarray
-        A prediction uncertainty for each dimer in qcel_dimers (kcal / mol). 
+    uncertainties: :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        A prediction uncertainty for each dimer in dimers (kcal / mol). 
         Calculated as the standard deviation of predictions of 5 pretrained AP-Net models.
         Has the same length/shape as the returned predictions.
         If use_ensemble == False, this will not be returned.
     """
 
-    if isinstance(qcel_dimers, list):
-        dimers = [util.qcel_to_data(dimer) for dimer in qcel_dimers]
+    if isinstance(dimers, list):
+        dimer_list = [util.qcel_to_data(dimer) for dimer in dimers]
     else:
-        dimers = [util.qcel_to_data(qcel_dimers)]
+        dimer_list = [util.qcel_to_data(dimers)]
 
     if use_ensemble:
         pair_models = pair_models_all
@@ -113,7 +115,7 @@ def predict_sapt(qcel_dimers, use_ensemble=True, return_pairs=False):
         pair_models = pair_models_all[:1]
         atom_models = atom_models_all[:1]
 
-    N = len(dimers)
+    N = len(dimer_list)
 
     mtp_time = 0.0
     elst_time = 0.0
@@ -125,7 +127,7 @@ def predict_sapt(qcel_dimers, use_ensemble=True, return_pairs=False):
     #print('Making Predictions...')
     t_start = time.time()
 
-    for i, d in enumerate(dimers):
+    for i, d in enumerate(dimer_list):
 
         nA, nB = len(d[0]), len(d[1])
         if nA > pad_dim or nB > pad_dim:
