@@ -1,4 +1,7 @@
-import math
+"""
+Functions for evaluating electrostatics between atom-centered multipoles
+"""
+
 import numpy as np
 import h5py
 from apnet import constants

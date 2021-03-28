@@ -1,3 +1,7 @@
+"""
+Fixed constants (units, atom types, etc.)
+"""
+
 import qcelemental as qcel
 
 au2ang = qcel.constants.conversion_factor("bohr", "angstrom")

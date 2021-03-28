@@ -1,3 +1,7 @@
+"""
+Descriptors for atomic and atomic-pair environments
+"""
+
 import sys
 import time
 from multiprocessing import Pool
