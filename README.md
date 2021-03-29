@@ -26,7 +26,7 @@ This will take a few minutes.
 
 You can now call `import apnet` from any python script.
 (There is no further need to work out of this repository).
-Verify that the installation was succesful by running the following of code, which predicts the interaction energy of a water dimer:
+Verify that the installation was succesful by running the following snippet of code, which predicts the interaction energy of a water dimer:
 ```
 import apnet
 import qcelemental as qcel
@@ -47,7 +47,7 @@ prediction, uncertainty = apnet.predict_sapt(dimer)
 print(prediction)
 ```
 
-The output should look as follows:
+The output should look like this:
 ```
 [array([-2.87016274, -3.77428398,  2.41356459, -0.50601828, -1.00342507])]
 ```
