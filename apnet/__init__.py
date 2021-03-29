@@ -7,5 +7,5 @@ __author__ = "Zachary L. Glick"
 __credits__ = "Georgia Institute of Technology"
 
 
-from .predict import predict_sapt, predict_multipoles, predict_elst
+from .predict import predict_sapt, predict_sapt_common, predict_multipoles, predict_elst
 from .util import load_bms_dimer, load_pickle

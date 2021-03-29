@@ -179,7 +179,6 @@ def qcel_to_monomerdata(monomer):
 
     n = len(monomer.symbols)
     aQ = monomer.molecular_charge / n
-    print(Z.shape, R.shape)
 
     return (R, Z, aQ)
 

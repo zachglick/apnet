@@ -11,6 +11,9 @@ Predicting
 ----------
 
 .. autofunction:: apnet.predict_sapt
+.. autofunction:: apnet.predict_sapt_common
+.. autofunction:: apnet.predict_elst
+.. autofunction:: apnet.predict_multipoles
 
 
 Training

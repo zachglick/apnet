@@ -4,15 +4,16 @@ Predict interaction energies and atomic properties
 
 import time
 
-import os, sys, argparse
+import os 
 from pathlib import Path
 import numpy as np
-import pandas as pd
 
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
 import tensorflow as tf
 tf.get_logger().setLevel('ERROR')
 tf.keras.backend.set_floatx('float64')
+
+import qcelemental as qcel
 
 from apnet import multipoles
 from apnet import util
@@ -56,7 +57,6 @@ def load_atom_model(path : str, pad_dim : int):
 
     path_key = (path, pad_dim)
     if path_key not in atom_model_cache:
-        print(f"Adding {pad_dim} new")
         if not os.path.isfile(path):
             raise Exception(f'{path} is not a valid path')
         atom_model_cache[path_key] = models.make_atom_model(mus, etas, pad_dim, nelem, nembed, nnodes, nmessage)
@@ -66,19 +66,29 @@ def load_atom_model(path : str, pad_dim : int):
     return atom_model_cache[path_key]
 
 def predict_multipoles(molecules, use_ensemble=True):
-    """Predict atom-centered multipoles with a pre-trained cartesian-epnn
+    """Predict atom-centered multipoles with a pre-trained model
 
-    Long description
+    Predicts atomic charge distributions (at the HF/aug-cc-pV(D+d)Z level of theory) in the form
+    of atom-centered multipoles (charge, dipole, and quadrupole). Predicted atomic charges are 
+    guaranteed to sum to the total charge, and quadrupoles are guaranteed to be traceless.
 
     Parameters
     ----------
     molecules : :class:`~qcelemental.models.Molecule` or list of :class:`~qcelemental.models.Molecule`
-        One or more molecules to 
+        One or more molecules to predict the atomic multipoles of. Each molecule must contain exactly
+        one molecular fragment.
 
     Returns
     -------
-    multipoles : :class:`~numpy.ndarray` or list of :class:`~numpy.ndarray`
-        Multipoles q, ux, uy, uz, \Theta_xx, 
+    predictions : list of :class:`~numpy.ndarray`
+        The multipole predictions for each molecule are an array of shape (NATOM, 10).
+        The following ordering is used for the second index: [charge, dipole_x, dipole_y, dipole_z,
+        quadrupole_xx, quadrupole_xy, quadrupole_xz, quadrupole_yy, quadrupole_yz, quadrupole_zz].
+    uncertainties : list of :class:`~numpy.ndarray`
+        A prediction uncertainty for each molecule in molecules (kcal / mol). 
+        Calculated as the standard deviation of predictions of 3 pretrained atomic property models.
+        Has the same length/shape as the returned predictions.
+        If use_ensemble == False, this will not be returned.
     """
 
     if isinstance(molecules, list):
@@ -135,9 +145,12 @@ def predict_multipoles(molecules, use_ensemble=True):
 
 
 def predict_elst(dimers, use_ensemble=True, return_pairs=False):
-    """Compute long-range electrostatics from predicted multipoles
+    """Predict long-range electrostatics interactions with a pre-trained model
 
-    Long description.
+    Predicts the long-range electrostatic component of the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z 
+    level of theory) for one or more molecular dimers. This is done by predicting atom-centered charges,
+    dipoles, and quadrupoles on each monomer and evaluating the electrostatic interactions energy of the 
+    predicted multipoles.
 
     Parameters
     ----------
@@ -153,11 +166,11 @@ def predict_elst(dimers, use_ensemble=True, return_pairs=False):
     Returns
     -------
     predictions : list of float or list of :class:`numpy.ndarray`
-        Predicted long-range electrostatics each dimer in dimers (kcal / mol).
-        If return_pairs == False, each prediction is a single float
+        A predicted long-range electrostatics for each dimer (kcal / mol).
+        If return_pairs == False, each prediction is a single float.
         If return_pairs == True, each prediction is a numpy.ndarray with shape (NA, NB).
     uncertainties: list of float or list of :class:`numpy.ndarray`
-        A prediction uncertainty for each dimer in dimers (kcal / mol). 
+        A prediction uncertainty for each dimer (kcal / mol). 
         Calculated as the standard deviation of predictions of 3 pretrained atomic property models.
         Has the same length/shape as the returned predictions.
         If use_ensemble == False, this will not be returned.
@@ -245,12 +258,12 @@ def predict_elst(dimers, use_ensemble=True, return_pairs=False):
 
 
 def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
-    """Predict interaction energies with a pre-trained AP-Net model
+    """Predict interaction energies with a pre-trained model
 
     Predicts the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
     more molecular dimers. Predictions are decomposed into physically meaningful SAPT components.
-    (electrostatics, exchange, induction, and dispersion).
-
+    (electrostatics, exchange, induction, and dispersion). Electrostatic predictions include
+    both short-range charge penetration effects and long-range multipole electrostatics.
 
     Parameters
     ----------
@@ -267,14 +280,14 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
     Returns
     -------
     predictions : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
-        A predicted SAPT interaction energy breakdown for each dimer in dimers (kcal / mol).
+        A predicted SAPT interaction energy breakdown for each dimer (kcal / mol).
         If return_pairs == False, each prediction is a numpy.ndarray with shape (5,).
         If return_pairs == True, each prediction is a numpy.ndarray with shape (5, NA, NB).
         The first dimension of length 5 indexes SAPT components:
-        [total, electrostatics, exchange, induction, dispersion]
+        [total, electrostatics, exchange, induction, dispersion].
     uncertainties: :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
-        A prediction uncertainty for each dimer in dimers (kcal / mol). 
-        Calculated as the standard deviation of predictions of 5 pretrained AP-Net models.
+        A prediction uncertainty for each dimer (kcal / mol). 
+        Calculated as the standard deviation of predictions of 5 pretrained models.
         Has the same length/shape as the returned predictions.
         If use_ensemble == False, this will not be returned.
     """
@@ -346,6 +359,156 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
 
         # make pair features
         features = util.make_features(d[0], d[1], d[2], d[3], mtpA, mtpB, pair_mtp)
+
+        # predict short-range interaction energy
+        sapt_prd_pair = np.array([predict_dimer_sapt(pair_model, features) for pair_model in pair_models])
+
+        # add "total interaction energy" dimension
+        sapt_prd_pair = np.concatenate([np.sum(sapt_prd_pair, axis=2, keepdims=True), sapt_prd_pair], axis=2)
+
+        if return_pairs:
+            sapt_prd = np.transpose(sapt_prd_pair, axes=(0,2,1))
+            sapt_prd = sapt_prd.reshape(-1,5,nA,nB) # nensemble x 5 x nA x nB
+        else:
+            sapt_prd = np.sum(sapt_prd_pair, axis=1) # nensemble x 5
+
+        # ensemble std and avg
+        sapt_std = np.std(sapt_prd, axis=0)
+        sapt_prd = np.average(sapt_prd, axis=0)
+
+        sapt_prds.append(sapt_prd)
+        sapt_stds.append(sapt_std)
+
+    if use_ensemble:
+        return sapt_prds, sapt_stds
+    else:
+        return sapt_prds
+
+
+
+def predict_sapt_common(common_monomer, monomers, use_ensemble=True, return_pairs=False):
+    """Predict interaction energies with a pre-trained model
+
+    Predicts the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
+    more molecular dimers. Predictions are decomposed into physically meaningful SAPT components.
+    (electrostatics, exchange, induction, and dispersion). Electrostatic predictions include
+    both short-range charge penetration effects and long-range multipole electrostatics.
+    
+    This is a special case of `apnet.predict_sapt` where one monomer is common to all dimers.
+    This method is more efficient, particularly when the common monomer is large. An example
+    use case is assessing the interaction energy between a (large) protein pocket, and many docked
+    ligands.
+
+    Parameters
+    ----------
+    common_monomer: :class:`~qcelemental.models.Molecule`
+        A single monomer (one molecular fragment) that is the same across all dimers. (For example,
+        a protein pocket)
+    monomers: list of :class:`~qcelemental.models.Molecule`
+        One or more monomers (one molecular fragment) for which the interaction energy between each
+        monomer and `common_monomer` will be predicted. (For example, a list of docked ligands)
+    use_ensemble: `bool`, optional
+        Do use an ensemble of 5 AP-Net models? This is more expensive, but improves the prediction
+        accuracy and also provides a prediction uncertainty
+    return_pairs: `bool`, optional
+        Do return the individual atom-pair interaction energies instead of dimer interaction
+        energies?
+
+    Returns
+    -------
+    predictions : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        A predicted SAPT interaction energy breakdown for each dimer (kcal / mol).
+        If return_pairs == False, each prediction is a numpy.ndarray with shape (5,).
+        If return_pairs == True, each prediction is a numpy.ndarray with shape (5, NA, NB).
+        The first dimension of length 5 indexes SAPT components:
+        [total, electrostatics, exchange, induction, dispersion].
+    uncertainties: :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        A prediction uncertainty for each dimer (kcal / mol). 
+        Calculated as the standard deviation of predictions of 5 pretrained models.
+        Has the same length/shape as the returned predictions.
+        If use_ensemble == False, this will not be returned.
+    """
+
+    if not isinstance(common_monomer, qcel.models.Molecule):
+        raise Exception(f'Argument `common_monomer` is not a Molecule')
+
+    if not isinstance(monomers, list):
+        raise Exception(f'Argument `monomers` should be a List of Molecule objects')
+
+    for monomer in monomers:
+        if not isinstance(monomer, qcel.models.Molecule):
+            raise Exception(f'Argument `monomers` should be a List of Molecule objects')
+
+    monomerA = util.qcel_to_monomerdata(common_monomer)
+    monomerB_list = [util.qcel_to_monomerdata(monomer) for monomer in monomers]
+
+    N = len(monomers)
+
+    if use_ensemble:
+        atom_modelpaths = default_atom_modelpaths
+        pair_modelpaths = default_pair_modelpaths
+    else:
+        atom_modelpaths = default_atom_modelpaths[:1]
+        pair_modelpaths = default_pair_modelpaths[:1]
+
+    pair_models = [load_pair_model(path) for path in default_pair_modelpaths]
+
+    nA = len(monomerA[0])
+    atom_models_A = [load_atom_model(path, nA) for path in atom_modelpaths]
+
+    # get padded R/Z and total charge mask for CMPNN 
+    RAti = np.zeros((1, nA, 3))
+    RAti[0,:nA,:] = monomerA[0] 
+    ZAti = np.zeros((1, nA))
+    ZAti[0,:nA] = monomerA[1] 
+    aQAti = np.zeros((1, nA, nA, 1))
+    aQAti[0,:nA,:nA,0] = monomerA[2]
+
+    # predict multipoles with CMPNN ensemble
+    mtpA_prds = []
+
+    for atom_model in atom_models_A:
+        mtpA_prd = predict_monomer_multipoles(atom_model, RAti, ZAti, aQAti)
+        mtpA_prd = np.concatenate([np.expand_dims(mtpA_prd[0], axis=-1), mtpA_prd[1], mtpA_prd[2], mtpA_prd[3]], axis=-1)
+        mtpA_prds.append(mtpA_prd)
+
+    mtpA = np.average(mtpA_prds, axis=0)[0,:nA,:]
+
+    sapt_prds = []
+    sapt_stds = []
+
+    for i, monomerB in enumerate(monomerB_list):
+
+        nB = len(monomerB[0])
+        nB_pad =  10 * ((nB + 9) // 10)
+
+        # load atom models
+        # have to load models inside loop bc model is dependent on natom
+        atom_models_B = [load_atom_model(path, nB_pad) for path in atom_modelpaths]
+
+        # get padded R/Z and total charge mask for CMPNN 
+        RBti = np.zeros((1, nB_pad, 3))
+        RBti[0,:nB,:] = monomerB[0] 
+        ZBti = np.zeros((1, nB_pad))
+        ZBti[0,:nB] = monomerB[1] 
+        aQBti = np.zeros((1, nB_pad, nB_pad, 1))
+        aQBti[0,:nB,:nB,0] = monomerB[2]
+
+        # predict multipoles with CMPNN ensemble
+        mtpB_prds = []
+        
+        for atom_model in atom_models_B:
+            mtpB_prd = predict_monomer_multipoles(atom_model, RBti, ZBti, aQBti)
+            mtpB_prd = np.concatenate([np.expand_dims(mtpB_prd[0], axis=-1), mtpB_prd[1], mtpB_prd[2], mtpB_prd[3]], axis=-1)
+            mtpB_prds.append(mtpB_prd)
+
+        mtpB = np.average(mtpB_prds, axis=0)[0,:nB,:]
+
+        # eval elst energy with predicted multipoles
+        elst_mtp, pair_mtp = multipoles.eval_dimer(monomerA[0], monomerB[0], monomerA[1], monomerB[1], mtpA, mtpB)
+
+        # make pair features
+        features = util.make_features(monomerA[0], monomerB[0], monomerA[1], monomerB[1], mtpA, mtpB, pair_mtp)
 
         # predict short-range interaction energy
         sapt_prd_pair = np.array([predict_dimer_sapt(pair_model, features) for pair_model in pair_models])
