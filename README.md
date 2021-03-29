@@ -62,10 +62,11 @@ The actual SAPT decomposition is also in good agreement: -3.46 (electrostatics),
 The `docs/` directory of this repository contains detailed documentation for using this package.
 In the near future, this documentation will be hosted online for easy reference.
 For now, you can navigate this local copy of the documentation by opening `docs/build/html/index.html` in a web browser.
+(Unforunately, GitHub doesn't render these documentation pages, you have to download them to your machine in order to view them).
 
 Note that the installation instructions in `docs/` are different from the instructions in this README.
 The docs contain install instructions that will take effect when the `apnet` package is made public.
-
+For now, stick to the installation instructions in this README.
 
 <!--The features of this python package include:-->
 <!--* Predict SAPT interaction energies with a pre-trained model-->
