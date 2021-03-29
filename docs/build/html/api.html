@@ -1,0 +1,402 @@
+
+
+<!DOCTYPE html>
+<!--[if IE 8]><html class="no-js lt-ie9" lang="en" > <![endif]-->
+<!--[if gt IE 8]><!--> <html class="no-js" lang="en" > <!--<![endif]-->
+<head>
+  <meta charset="utf-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  
+  <title>API Documentation &mdash; AP-Net 0.0.1 documentation</title>
+  
+
+  
+  
+  
+  
+
+  
+  <script type="text/javascript" src="_static/js/modernizr.min.js"></script>
+  
+    
+      <script type="text/javascript" id="documentation_options" data-url_root="./" src="_static/documentation_options.js"></script>
+        <script src="_static/jquery.js"></script>
+        <script src="_static/underscore.js"></script>
+        <script src="_static/doctools.js"></script>
+    
+    <script type="text/javascript" src="_static/js/theme.js"></script>
+
+    
+
+  
+  <link rel="stylesheet" href="_static/css/theme.css" type="text/css" />
+  <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    <link rel="index" title="Index" href="genindex.html" />
+    <link rel="search" title="Search" href="search.html" />
+    <link rel="prev" title="Advanced Examples" href="advanced_examples.html" /> 
+</head>
+
+<body class="wy-body-for-nav">
+
+   
+  <div class="wy-grid-for-nav">
+    
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+          
+
+          
+            <a href="index.html" class="icon icon-home"> AP-Net
+          
+
+          
+          </a>
+
+          
+            
+            
+          
+
+          
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+
+          
+        </div>
+
+        <div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="main navigation">
+          
+            
+            
+              
+            
+            
+              <ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="install.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="basic_examples.html">Basic Examples</a></li>
+<li class="toctree-l1"><a class="reference internal" href="advanced_examples.html">Advanced Examples</a></li>
+<li class="toctree-l1 current"><a class="current reference internal" href="#">API Documentation</a><ul>
+<li class="toctree-l2"><a class="reference internal" href="#loading-data">Loading Data</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#predicting">Predicting</a></li>
+<li class="toctree-l2"><a class="reference internal" href="#training">Training</a></li>
+</ul>
+</li>
+</ul>
+
+            
+          
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap">
+
+      
+      <nav class="wy-nav-top" aria-label="top navigation">
+        
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="index.html">AP-Net</a>
+        
+      </nav>
+
+
+      <div class="wy-nav-content">
+        
+        <div class="rst-content">
+        
+          
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+<div role="navigation" aria-label="breadcrumbs navigation">
+
+  <ul class="wy-breadcrumbs">
+    
+      <li><a href="index.html">Docs</a> &raquo;</li>
+        
+      <li>API Documentation</li>
+    
+    
+      <li class="wy-breadcrumbs-aside">
+        
+            
+            <a href="_sources/api.rst.txt" rel="nofollow"> View page source</a>
+          
+        
+      </li>
+    
+  </ul>
+
+  
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+            
+  <div class="section" id="api-documentation">
+<h1>API Documentation<a class="headerlink" href="#api-documentation" title="Permalink to this headline">¶</a></h1>
+<div class="section" id="loading-data">
+<h2>Loading Data<a class="headerlink" href="#loading-data" title="Permalink to this headline">¶</a></h2>
+<dl class="py function">
+<dt id="apnet.load_bms_dimer">
+<code class="sig-prename descclassname"><span class="pre">apnet.</span></code><code class="sig-name descname"><span class="pre">load_bms_dimer</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#apnet.load_bms_dimer" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load a single dimer from the BMS-xyz format</p>
+<p>This function expects an xyz file in the format used with the 1.66M dimer dataset.
+The first line contains the number of atoms.
+The second line contains a comma-separated list of values such as the dimer name, dimer and monomer charges, SAPT labels (at various levels of theory), and number of atoms in the first monomer.
+The next <cite>natom</cite> lines each contain an atomic symbol follwed by the x, y, and z cooordinates of the atom (Angstrom)</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>file</strong> (<a class="reference external" href="https://docs.python.org/3.8/library/stdtypes.html#str" title="(in Python v3.8)"><em>str</em></a>) – The name of a file containing the xyz</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>dimer</strong> (<a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a>)</p></li>
+<li><p><strong>labels</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></a>) – The SAPT0/aug-cc-pV(D+d)Z interaction energy labels: [total, electrostatics, exchange, induction, and dispersion].</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="apnet.load_pickle">
+<code class="sig-prename descclassname"><span class="pre">apnet.</span></code><code class="sig-name descname"><span class="pre">load_pickle</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">file</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#apnet.load_pickle" title="Permalink to this definition">¶</a></dt>
+<dd><p>Load multiple dimers from a <a class="reference external" href="https://pandas.pydata.org/pandas-docs/dev/reference/api/pandas.DataFrame.html#pandas.DataFrame" title="(in pandas v1.3.0.dev0+1168.g029907c9d6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></a></p>
+<p>Loads dimers from the <a class="reference external" href="https://pandas.pydata.org/pandas-docs/dev/reference/api/pandas.DataFrame.html#pandas.DataFrame" title="(in pandas v1.3.0.dev0+1168.g029907c9d6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></a> format associated with the original AP-Net publication.
+Each row of the <a class="reference external" href="https://pandas.pydata.org/pandas-docs/dev/reference/api/pandas.DataFrame.html#pandas.DataFrame" title="(in pandas v1.3.0.dev0+1168.g029907c9d6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></a> corresponds to a molecular dimer.</p>
+<p>The columns [<cite>ZA</cite>, <cite>ZB</cite>, <cite>RA</cite>, <cite>RB</cite>, <cite>TQA</cite>, <cite>TQB</cite>] are required.
+<cite>ZA</cite> and <cite>ZB</cite> are atom types (<a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></a> of <cite>int</cite> with shape (<cite>n</cite>,)).
+<cite>RA</cite> and <cite>RB</cite> are atomic positions in Angstrom (<a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></a> of <cite>float</cite> with shape (<cite>n</cite>,3.)).
+<cite>TQA</cite> and <cite>TQB</cite> are monomer charges (int).</p>
+<p>The columns [<cite>Total_aug</cite>, <cite>Elst_aug</cite>, <cite>Exch_aug</cite>, <cite>Ind_aug</cite>, and <cite>Disp_aug</cite>] are optional.
+Each column describes SAPT0/aug-cc-pV(D+d)Z labels in kcal / mol (<cite>float</cite>).</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>file</strong> (<a class="reference external" href="https://docs.python.org/3.8/library/stdtypes.html#str" title="(in Python v3.8)"><em>str</em></a>) – The name of a file containing the <a class="reference external" href="https://pandas.pydata.org/pandas-docs/dev/reference/api/pandas.DataFrame.html#pandas.DataFrame" title="(in pandas v1.3.0.dev0+1168.g029907c9d6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></a></p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>dimers</strong> (list of <a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a>)</p></li>
+<li><p><strong>labels</strong> (list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></a> or None) – None is returned if SAPT0 label columns are not present in the <a class="reference external" href="https://pandas.pydata.org/pandas-docs/dev/reference/api/pandas.DataFrame.html#pandas.DataFrame" title="(in pandas v1.3.0.dev0+1168.g029907c9d6)"><code class="xref py py-class docutils literal notranslate"><span class="pre">DataFrame</span></code></a></p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="section" id="predicting">
+<h2>Predicting<a class="headerlink" href="#predicting" title="Permalink to this headline">¶</a></h2>
+<dl class="py function">
+<dt id="apnet.predict_sapt">
+<code class="sig-prename descclassname"><span class="pre">apnet.</span></code><code class="sig-name descname"><span class="pre">predict_sapt</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dimers</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_ensemble</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_pairs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#apnet.predict_sapt" title="Permalink to this definition">¶</a></dt>
+<dd><p>Predict interaction energies with a pre-trained model</p>
+<p>Predicts the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
+more molecular dimers. Predictions are decomposed into physically meaningful SAPT components.
+(electrostatics, exchange, induction, and dispersion). Electrostatic predictions include
+both short-range charge penetration effects and long-range multipole electrostatics.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dimers</strong> (<a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a> or list of <a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a>) – One or more dimers to predict the interaction energy of. Each dimer must contain exactly
+two molecular fragments.</p></li>
+<li><p><strong>use_ensemble</strong> (<cite>bool</cite>, optional) – Do use an ensemble of 5 AP-Net models? This is more expensive, but improves the prediction
+accuracy and also provides a prediction uncertainty</p></li>
+<li><p><strong>return_pairs</strong> (<cite>bool</cite>, optional) – Do return the individual atom-pair interaction energies instead of dimer interaction
+energies?</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>predictions</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a> or list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a>) – A predicted SAPT interaction energy breakdown for each dimer (kcal / mol).
+If return_pairs == False, each prediction is a numpy.ndarray with shape (5,).
+If return_pairs == True, each prediction is a numpy.ndarray with shape (5, NA, NB).
+The first dimension of length 5 indexes SAPT components:
+[total, electrostatics, exchange, induction, dispersion].</p></li>
+<li><p><strong>uncertainties</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a> or list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a>) – A prediction uncertainty for each dimer (kcal / mol).
+Calculated as the standard deviation of predictions of 5 pretrained models.
+Has the same length/shape as the returned predictions.
+If use_ensemble == False, this will not be returned.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="apnet.predict_sapt_common">
+<code class="sig-prename descclassname"><span class="pre">apnet.</span></code><code class="sig-name descname"><span class="pre">predict_sapt_common</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">common_monomer</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">monomers</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_ensemble</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_pairs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#apnet.predict_sapt_common" title="Permalink to this definition">¶</a></dt>
+<dd><p>Predict interaction energies with a pre-trained model</p>
+<p>Predicts the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
+more molecular dimers. Predictions are decomposed into physically meaningful SAPT components.
+(electrostatics, exchange, induction, and dispersion). Electrostatic predictions include
+both short-range charge penetration effects and long-range multipole electrostatics.</p>
+<p>This is a special case of <cite>apnet.predict_sapt</cite> where one monomer is common to all dimers.
+This method is more efficient, particularly when the common monomer is large. An example
+use case is assessing the interaction energy between a (large) protein pocket, and many docked
+ligands.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>common_monomer</strong> (<a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a>) – A single monomer (one molecular fragment) that is the same across all dimers. (For example,
+a protein pocket)</p></li>
+<li><p><strong>monomers</strong> (list of <a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a>) – One or more monomers (one molecular fragment) for which the interaction energy between each
+monomer and <cite>common_monomer</cite> will be predicted. (For example, a list of docked ligands)</p></li>
+<li><p><strong>use_ensemble</strong> (<cite>bool</cite>, optional) – Do use an ensemble of 5 AP-Net models? This is more expensive, but improves the prediction
+accuracy and also provides a prediction uncertainty</p></li>
+<li><p><strong>return_pairs</strong> (<cite>bool</cite>, optional) – Do return the individual atom-pair interaction energies instead of dimer interaction
+energies?</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>predictions</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a> or list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a>) – A predicted SAPT interaction energy breakdown for each dimer (kcal / mol).
+If return_pairs == False, each prediction is a numpy.ndarray with shape (5,).
+If return_pairs == True, each prediction is a numpy.ndarray with shape (5, NA, NB).
+The first dimension of length 5 indexes SAPT components:
+[total, electrostatics, exchange, induction, dispersion].</p></li>
+<li><p><strong>uncertainties</strong> (<a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a> or list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a>) – A prediction uncertainty for each dimer (kcal / mol).
+Calculated as the standard deviation of predictions of 5 pretrained models.
+Has the same length/shape as the returned predictions.
+If use_ensemble == False, this will not be returned.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="apnet.predict_elst">
+<code class="sig-prename descclassname"><span class="pre">apnet.</span></code><code class="sig-name descname"><span class="pre">predict_elst</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">dimers</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_ensemble</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">return_pairs</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">False</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#apnet.predict_elst" title="Permalink to this definition">¶</a></dt>
+<dd><p>Predict long-range electrostatics interactions with a pre-trained model</p>
+<p>Predicts the long-range electrostatic component of the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z
+level of theory) for one or more molecular dimers. This is done by predicting atom-centered charges,
+dipoles, and quadrupoles on each monomer and evaluating the electrostatic interactions energy of the
+predicted multipoles.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><ul class="simple">
+<li><p><strong>dimers</strong> (<a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a> or list of <a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a>) – One or more dimers to predict the interaction energy of. Each dimer must contain exactly
+two molecular fragments.</p></li>
+<li><p><strong>use_ensemble</strong> (<cite>bool</cite>, optional) – Do use an ensemble of 3 atom property models? This is more expensive, but improves the
+prediction accuracy and also provides a prediction uncertainty</p></li>
+<li><p><strong>return_pairs</strong> (<cite>bool</cite>, optional) – Do return the individual atom-pair electrostatics instead of dimer electrostatics?</p></li>
+</ul>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>predictions</strong> (list of float or list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a>) – A predicted long-range electrostatics for each dimer (kcal / mol).
+If return_pairs == False, each prediction is a single float.
+If return_pairs == True, each prediction is a numpy.ndarray with shape (NA, NB).</p></li>
+<li><p><strong>uncertainties</strong> (list of float or list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">numpy.ndarray</span></code></a>) – A prediction uncertainty for each dimer (kcal / mol).
+Calculated as the standard deviation of predictions of 3 pretrained atomic property models.
+Has the same length/shape as the returned predictions.
+If use_ensemble == False, this will not be returned.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+<dl class="py function">
+<dt id="apnet.predict_multipoles">
+<code class="sig-prename descclassname"><span class="pre">apnet.</span></code><code class="sig-name descname"><span class="pre">predict_multipoles</span></code><span class="sig-paren">(</span><em class="sig-param"><span class="n"><span class="pre">molecules</span></span></em>, <em class="sig-param"><span class="n"><span class="pre">use_ensemble</span></span><span class="o"><span class="pre">=</span></span><span class="default_value"><span class="pre">True</span></span></em><span class="sig-paren">)</span><a class="headerlink" href="#apnet.predict_multipoles" title="Permalink to this definition">¶</a></dt>
+<dd><p>Predict atom-centered multipoles with a pre-trained model</p>
+<p>Predicts atomic charge distributions (at the HF/aug-cc-pV(D+d)Z level of theory) in the form
+of atom-centered multipoles (charge, dipole, and quadrupole). Predicted atomic charges are
+guaranteed to sum to the total charge, and quadrupoles are guaranteed to be traceless.</p>
+<dl class="field-list simple">
+<dt class="field-odd">Parameters</dt>
+<dd class="field-odd"><p><strong>molecules</strong> (<a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a> or list of <a class="reference external" href="https://qcelemental.readthedocs.io/en/latest/model_molecule.html#id0" title="(in QCElemental vv0.19.0+2.gff52f14.dirty)"><code class="xref py py-class docutils literal notranslate"><span class="pre">Molecule</span></code></a>) – One or more molecules to predict the atomic multipoles of. Each molecule must contain exactly
+one molecular fragment.</p>
+</dd>
+<dt class="field-even">Returns</dt>
+<dd class="field-even"><p><ul class="simple">
+<li><p><strong>predictions</strong> (list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></a>) – The multipole predictions for each molecule are an array of shape (NATOM, 10).
+The following ordering is used for the second index: [charge, dipole_x, dipole_y, dipole_z,
+quadrupole_xx, quadrupole_xy, quadrupole_xz, quadrupole_yy, quadrupole_yz, quadrupole_zz].</p></li>
+<li><p><strong>uncertainties</strong> (list of <a class="reference external" href="https://numpy.org/doc/stable/reference/generated/numpy.ndarray.html#numpy.ndarray" title="(in NumPy v1.20)"><code class="xref py py-class docutils literal notranslate"><span class="pre">ndarray</span></code></a>) – A prediction uncertainty for each molecule in molecules (kcal / mol).
+Calculated as the standard deviation of predictions of 3 pretrained atomic property models.
+Has the same length/shape as the returned predictions.
+If use_ensemble == False, this will not be returned.</p></li>
+</ul>
+</p>
+</dd>
+</dl>
+</dd></dl>
+
+</div>
+<div class="section" id="training">
+<h2>Training<a class="headerlink" href="#training" title="Permalink to this headline">¶</a></h2>
+<p>No model training functions yet, check back later.</p>
+</div>
+</div>
+
+
+           </div>
+           
+          </div>
+          <footer>
+  
+    <div class="rst-footer-buttons" role="navigation" aria-label="footer navigation">
+      
+      
+        <a href="advanced_examples.html" class="btn btn-neutral float-left" title="Advanced Examples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left"></span> Previous</a>
+      
+    </div>
+  
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>
+        &copy; Copyright 2021, Zach Glick
+
+    </p>
+  </div>
+  Built with <a href="http://sphinx-doc.org/">Sphinx</a> using a <a href="https://github.com/rtfd/sphinx_rtd_theme">theme</a> provided by <a href="https://readthedocs.org">Read the Docs</a>. 
+
+</footer>
+
+        </div>
+      </div>
+
+    </section>
+
+  </div>
+  
+
+
+  <script type="text/javascript">
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script>
+
+  
+  
+    
+   
+
+</body>
+</html>
