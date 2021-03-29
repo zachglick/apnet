@@ -25,7 +25,7 @@ This will take a few minutes.
 #### Testing
 
 You can now call `import apnet` from any python script.
-(There is noz further need to work out of this repository).
+(There is no further need to work out of this repository).
 Verify that the installation was succesful by running the following of code, which predicts the interaction energy of a water dimer:
 ```
 import apnet
