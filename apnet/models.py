@@ -393,16 +393,16 @@ def make_pair_model(nZ, ACSF_nmu=43, APSF_nmu=21):
     input_layerZB = tf.keras.Input(shape=(nZ+1,), dtype='float64')
 
     # atom centered symmetry functions
-    input_layerGA = tf.keras.Input(shape=(ACSF_nmu,nZ), dtype='float64')
-    input_layerGB = tf.keras.Input(shape=(ACSF_nmu,nZ), dtype='float64')
+    input_layerGA = tf.keras.Input(shape=(ACSF_nmu, nZ), dtype='float64')
+    input_layerGB = tf.keras.Input(shape=(ACSF_nmu, nZ), dtype='float64')
 
     # atom pair symmetry functions
-    input_layerIA = tf.keras.Input(shape=(APSF_nmu,nZ), dtype='float64')
-    input_layerIB = tf.keras.Input(shape=(APSF_nmu,nZ), dtype='float64')
+    input_layerIA = tf.keras.Input(shape=(APSF_nmu, nZ), dtype='float64')
+    input_layerIB = tf.keras.Input(shape=(APSF_nmu, nZ), dtype='float64')
 
     # multipoles
-    input_layerQA = tf.keras.Input(shape=(10), dtype='float64')
-    input_layerQB = tf.keras.Input(shape=(10), dtype='float64')
+    input_layerQA = tf.keras.Input(shape=(nZ), dtype='float64')
+    input_layerQB = tf.keras.Input(shape=(nZ), dtype='float64')
 
     # multipole electrostatics
     input_layerMTP = tf.keras.Input(shape=(1), dtype='float64')

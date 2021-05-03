@@ -116,7 +116,6 @@ def make_features(RA, RB, ZA, ZB, QA, QB, MTP, ACSF_nmu=43, APSF_nmu=21, ACSF_et
     ZB = np.expand_dims(ZB, axis=0)
     ZB = np.tile(ZB, (nA,1,1))
 
-
     #ZA = ZA.astype(float)
     #ZB = ZA.astype(float)
 

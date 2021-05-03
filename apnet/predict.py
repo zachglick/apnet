@@ -39,16 +39,54 @@ nelem = 36
 nembed = 10
 nnodes = [256,128,64]
 nmessage = 3
-nrbf= 43
+nrbf = 43
+napsf = 21
 mus = np.linspace(0.8, 5.0, nrbf)
 etas = np.array([-100.0] * nrbf)
+
+import time
+
+class Timer:
+
+   def __init__(self):
+
+       self.durations = {}
+       self.starts = {}
+
+   def start(self, name):
+
+       if name in self.starts:
+           raise Exception(f"Timer error: '{name}' already started")
+
+       self.starts[name] = time.time()
+
+   def stop(self, name):
+
+       if name not in self.starts:
+           raise Exception(f"Timer error: '{name}' does not exist")
+
+       dt = time.time() - self.starts[name]
+       self.starts.pop(name)
+
+       if name in self.durations:
+           self.durations[name] += dt
+       else:
+           self.durations[name] = dt
+
+   def print(self):
+
+       print("\nTimings:")
+       for k, v in self.durations.items():
+           print(f"  {k:30s} {v:8.2f}")
+       print()
+
 
 def load_pair_model(path : str):
 
     if path not in pair_model_cache:
         if not os.path.isfile(path):
             raise Exception(f'{path} is not a valid path')
-        pair_model_cache[path] = models.make_pair_model(nZ=nembed)
+        pair_model_cache[path] = models.make_pair_model(nZ=nembed, ACSF_nmu=nrbf, APSF_nmu=napsf)
         pair_model_cache[path].load_weights(path)
         pair_model_cache[path].call = tf.function(pair_model_cache[path].call, experimental_relax_shapes=True)
     return pair_model_cache[path]
@@ -292,6 +330,9 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
         If use_ensemble == False, this will not be returned.
     """
 
+    pred_timer = Timer()
+
+    pred_timer.start('Total Prediction')
     if isinstance(dimers, list):
         dimer_list = [util.qcel_to_dimerdata(dimer) for dimer in dimers]
     else:
@@ -306,7 +347,9 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
         atom_modelpaths = default_atom_modelpaths[:1]
         pair_modelpaths = default_pair_modelpaths[:1]
 
+    pred_timer.start('Loading Pair Models')
     pair_models = [load_pair_model(path) for path in default_pair_modelpaths]
+    pred_timer.stop('Loading Pair Models')
 
     sapt_prds = []
     sapt_stds = []
@@ -318,8 +361,10 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
 
         # load atom models
         # have to load models inside loop bc model is dependent on natom
+        pred_timer.start('Loading Atom Models')
         atom_models_A = [load_atom_model(path, nA_pad) for path in atom_modelpaths]
         atom_models_B = [load_atom_model(path, nB_pad) for path in atom_modelpaths]
+        pred_timer.stop('Loading Atom Models')
 
         # get padded R/Z and total charge mask for CMPNN 
         RAti = np.zeros((1, nA_pad, 3))
@@ -341,6 +386,7 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
         mtpA_prds = []
         mtpB_prds = []
         
+        pred_timer.start('Predicting Multipoles')
         for atom_model in atom_models_A:
             mtpA_prd = predict_monomer_multipoles(atom_model, RAti, ZAti, aQAti)
             mtpA_prd = np.concatenate([np.expand_dims(mtpA_prd[0], axis=-1), mtpA_prd[1], mtpA_prd[2], mtpA_prd[3]], axis=-1)
@@ -350,18 +396,25 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
             mtpB_prd = predict_monomer_multipoles(atom_model, RBti, ZBti, aQBti)
             mtpB_prd = np.concatenate([np.expand_dims(mtpB_prd[0], axis=-1), mtpB_prd[1], mtpB_prd[2], mtpB_prd[3]], axis=-1)
             mtpB_prds.append(mtpB_prd)
+        pred_timer.stop('Predicting Multipoles')
 
         mtpA = np.average(mtpA_prds, axis=0)[0,:nA,:]
         mtpB = np.average(mtpB_prds, axis=0)[0,:nB,:]
 
         # eval elst energy with predicted multipoles
+        pred_timer.start('Electrostatics Evaluation')
         elst_mtp, pair_mtp = multipoles.eval_dimer(d[0], d[1], d[2], d[3], mtpA, mtpB)
+        pred_timer.stop('Electrostatics Evaluation')
 
         # make pair features
+        pred_timer.start('Pair Features')
         features = util.make_features(d[0], d[1], d[2], d[3], mtpA, mtpB, pair_mtp)
+        pred_timer.stop('Pair Features')
 
         # predict short-range interaction energy
+        pred_timer.start('Predicting Pair Energies')
         sapt_prd_pair = np.array([predict_dimer_sapt(pair_model, features) for pair_model in pair_models])
+        pred_timer.stop('Predicting Pair Energies')
 
         # add "total interaction energy" dimension
         sapt_prd_pair = np.concatenate([np.sum(sapt_prd_pair, axis=2, keepdims=True), sapt_prd_pair], axis=2)
@@ -378,6 +431,9 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
 
         sapt_prds.append(sapt_prd)
         sapt_stds.append(sapt_std)
+
+    pred_timer.stop('Total Prediction')
+    pred_timer.print()
 
     if use_ensemble:
         return sapt_prds, sapt_stds
