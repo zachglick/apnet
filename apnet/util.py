@@ -8,6 +8,9 @@ import pandas as pd
 from scipy.spatial import distance_matrix
 import qcelemental as qcel
 
+import tensorflow as tf
+import tensorflow.keras.backend as K
+
 from apnet import features
 from apnet import constants
 
@@ -182,6 +185,7 @@ def qcel_to_monomerdata(monomer):
     return (R, Z, aQ)
 
 
+#TODO: rename dimer
 def data_to_qcel(RA, RB, ZA, ZB, aQA, aQB):
     """ ML-ready numpy arrays to qcel mol """
 
@@ -205,6 +209,25 @@ def data_to_qcel(RA, RB, ZA, ZB, aQA, aQB):
     dimer = blockA + "--\n" + blockB + "no_com\nno_reorient\nunits angstrom"
     dimer = qcel.models.Molecule.from_data(dimer)
     return dimer
+
+
+
+def monomerdata_to_qcel(R, Z, aQ):
+    """ ML-ready numpy arrays to qcel mol """
+
+    n = R.shape[0]
+
+    tQ = int(round(aQ * n))
+
+    assert abs(tQ - aQ * n) < 1e-6
+
+    block = f"{tQ} {1}\n"
+    for i in range(n):
+        block += f"{constants.z_to_elem[Z[i]]} {R[i,0]} {R[i,1]} {R[i,2]}\n"
+
+    monomer = block + "no_com\nno_reorient\nunits angstrom"
+    monomer = qcel.models.Molecule.from_data(monomer)
+    return monomer
 
 def load_bms_dimer(file):
     """Load a single dimer from the BMS-xyz format
@@ -257,6 +280,8 @@ def load_bms_dimer(file):
     return dimer, label
 
 
+#TODO: rename to load_dimer_pickle
+
 def load_pickle(file):
     """Load multiple dimers from a :class:`~pandas.DataFrame`
 
@@ -301,6 +326,167 @@ def load_pickle(file):
         dimers.append(data_to_qcel(RA[i], RB[i], ZA[i], ZB[i], aQA[i], aQB[i]))
 
     return dimers, labels
+
+
+def load_monomer_pickle(file):
+    """Load multiple monomers from a :class:`~pandas.DataFrame`
+
+    Loads monomers from the :class:`~pandas.DataFrame` format associated with the original AP-Net publication.
+    Each row of the :class:`~pandas.DataFrame` corresponds to a molecular dimer.
+
+    The columns [`Z`, `R`, `total_charge`, `TQB`] are required.
+    `Z` is atom types (:class:`~numpy.ndarray` of `int` with shape (`n`,)).
+    `R` is atomic positions in Angstrom (:class:`~numpy.ndarray` of `float` with shape (`n`,3.)).
+    `total_charge` are monomer charges (int).
+
+    The column `cartesian_multipoles` is optional.
+    `cartesian_multipoles` describes atom-centered charges, dipoles, and quadrupoles (:class:`~numpy.ndarray` of `float` with shape (`n`, 10). The ordering convention is [q, u_x, u_y, u_z, Q_xx, Q_xy, Q_xz, Q_yy, Q_yz, Q_zz], all in a.u.)
+
+    Parameters
+    ----------
+    file : str
+        The name of a file containing the :class:`~pandas.DataFrame`
+    
+    Returns
+    -------
+    monomers: list of :class:`~qcelemental.models.Molecule`
+    multipoles: list of :class:`~numpy.ndarray` or None
+        None is returned if the `cartesian_multipoles` column is not present in the :class:`~pandas.DataFrame`
+    """
+
+    df = pd.read_pickle(file)
+    N = len(df.index)
+    R = df.R.tolist()
+    Z = df.Z.tolist()
+    TQ = df.total_charge.tolist()
+    aQ = [TQ[i] / np.sum(Z[i] > 0) for i in range(N)]
+    labels = df['cartesian_multipoles'].to_numpy()
+
+    monomers = []
+    for i in range(N):
+        monomers.append(monomerdata_to_qcel(R[i], Z[i], aQ[i]))
+
+    return monomers, labels
+
+
+# ROTATION / TRAINING STUFF
+# TODO: reorganize / move to other file
+
+def mse_mp(y_true, y_pred):
+    return K.mean(K.square(y_pred - y_true), axis=[-1,-2])
+
+def mae_mp(y_true, y_pred):
+    if y_pred.shape[-1] == 3:
+        return K.mean(K.abs(y_pred - y_true), axis=[-1,-2])
+    else:
+        return K.mean(K.abs(y_pred - y_true), axis=-1)
+
+
+def padded_monomerdata(molecule_list, multipoles, pad_dim):
+
+    N = len(molecule_list)
+    assert len(multipoles) == N
+
+    R = np.zeros((N, pad_dim, 3))
+    Z = np.zeros((N, pad_dim))
+    aQ = np.zeros((N, pad_dim, pad_dim, 1))
+    MTP = np.zeros((N, pad_dim, 10))
+
+    for i in range(N):
+        n = molecule_list[i][0].shape[0]
+        R[i,:n,:] = molecule_list[i][0]
+        Z[i,:n] = molecule_list[i][1]
+        aQ[i,:n,:n,0] = molecule_list[i][2]
+        MTP[i][:n] = multipoles[i][:n,:10]
+
+    trace = np.sum(MTP[:,:,[4,7,9]], axis=2)
+    MTP[:,:,4] -= trace / 3.0
+    MTP[:,:,7] -= trace / 3.0
+    MTP[:,:,9] -= trace / 3.0
+
+    return R, Z, aQ, MTP
+
+def rotation_matrix(n):
+    """ returns n rotation matrices for transformations in 3D cartesian space 
+        each rotation matrix is generated uniformly at random
+        output is an ndarray of dim n x 3 x 3
+    """
+
+    q = np.random.normal(loc=0.0, scale=1.0, size=(4,n))
+    q = q / np.linalg.norm(q, axis=0)
+    q2 = np.square(q)
+    R = np.array([ [q2[0] + q2[1] - q2[2] - q2[3],  2*q[1]*q[2] - 2*q[0]*q[3],      2*q[1]*q[3] + 2*q[0]*q[2]     ], 
+                   [2*q[1]*q[2] + 2*q[0]*q[3],      q2[0] - q2[1] + q2[2] - q2[3],  2*q[2]*q[3] - 2*q[0]*q[1]     ], 
+                   [2*q[1]*q[3] - 2*q[0]*q[2],      2*q[2]*q[3] + 2*q[0]*q[1],      q2[0] - q2[1] - q2[2] + q2[3] ],])
+
+    return np.transpose(R, [2,0,1])
+
+
+class RotationGenerator(tf.keras.utils.Sequence):
+    """generates rotated molecule data"""
+
+    def __init__(self, R, Z, mol_charge, y, batch_size=32, shuffle=True):
+        self.R = R # nmol x natom x 3
+        self.Z = Z # nmol x natom
+        self.mol_charge = mol_charge
+        self.y = y # nmol x natom x 10
+        self.batch_size = batch_size
+        self.shuffle = shuffle
+
+        self.nmol = R.shape[0]
+        self.natom = R.shape[1]
+        self.mol_inds = np.arange(self.nmol)
+
+        self.on_epoch_end()
+
+    def __len__(self):
+        """number of batches per epoch"""
+        return int(np.floor(self.nmol / self.batch_size))
+
+    def __getitem__(self, index):
+        """generate one batch of data"""
+        ind_start = index * self.batch_size
+        ind_end = (index + 1) * self.batch_size
+        batch_inds = self.mol_inds[ind_start:ind_end]
+
+        R_batch = self.R[batch_inds]
+        Z_batch = self.Z[batch_inds]
+        Q_batch = self.mol_charge[batch_inds]
+
+        # monopole
+        y_batch = self.y[batch_inds][:,:,0]
+
+        # dipole (mu_x, mu_y, mu_z)
+        y_i_batch = self.y[batch_inds][:,:,1:4]
+
+        # quadrupole diagonal (Q_xx, Q_yy, Q_zz)
+        y_ii_batch = self.y[batch_inds][:,:,[4,7,9]]
+
+        # quadrupole off-diagonal (Q_xy, Q_xz, Q_yz)
+        y_ij_batch = self.y[batch_inds][:,:,[5,6,8]]
+
+        return [R_batch, Z_batch, Q_batch], [y_batch, y_i_batch, y_ii_batch, y_ij_batch]
+
+    def on_epoch_end(self):
+        """Updates indexes and perform random rotations after each epoch"""
+        if self.shuffle == True:
+            np.random.shuffle(self.mol_inds)
+        M = rotation_matrix(self.nmol)
+        for i in range(self.nmol):
+            for j in range(self.natom):
+
+                self.R[i,j] = M[i] @ self.R[i,j]
+
+                mu = self.y[i,j][1:4]
+                mu = M[i] @ mu
+                self.y[i,j][1:4] = mu
+
+                Q = self.y[i,j][[4,5,6,5,7,8,6,8,9]].reshape(3,3)
+                Q = M[i] @ Q @ M[i].T
+                self.y[i,j][4:10] = Q.flatten()[[0,1,2,4,5,8]]
+
+
+
 
 
 if __name__ == "__main__":

@@ -8,4 +8,5 @@ __credits__ = "Georgia Institute of Technology"
 
 
 from .predict import predict_sapt, predict_sapt_common, predict_multipoles, predict_elst
-from .util import load_bms_dimer, load_pickle
+from .train import train_multipole_model
+from .util import load_bms_dimer, load_pickle, load_monomer_pickle

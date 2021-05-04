@@ -3,7 +3,6 @@ Predict interaction energies and atomic properties
 """
 
 import time
-
 import os 
 from pathlib import Path
 import numpy as np
@@ -43,8 +42,6 @@ nrbf = 43
 napsf = 21
 mus = np.linspace(0.8, 5.0, nrbf)
 etas = np.array([-100.0] * nrbf)
-
-import time
 
 class Timer:
 
@@ -103,7 +100,7 @@ def load_atom_model(path : str, pad_dim : int):
 
     return atom_model_cache[path_key]
 
-def predict_multipoles(molecules, use_ensemble=True):
+def predict_multipoles(molecules, modelpath=None, use_ensemble=True):
     """Predict atom-centered multipoles with a pre-trained model
 
     Predicts atomic charge distributions (at the HF/aug-cc-pV(D+d)Z level of theory) in the form
@@ -115,6 +112,12 @@ def predict_multipoles(molecules, use_ensemble=True):
     molecules : :class:`~qcelemental.models.Molecule` or list of :class:`~qcelemental.models.Molecule`
         One or more molecules to predict the atomic multipoles of. Each molecule must contain exactly
         one molecular fragment.
+    modelpath : `str`, optional
+        Path to file of atomic property model weights to be used in prediction. If not specified,
+        the pre-trained HF/aDZ model will be used.
+    use_ensemble : `bool`, optional
+        Do use an ensemble of pre-trained atomic property models? If modelpath is specified, this
+        parameter is ignored.
 
     Returns
     -------
@@ -126,7 +129,7 @@ def predict_multipoles(molecules, use_ensemble=True):
         A prediction uncertainty for each molecule in molecules (kcal / mol). 
         Calculated as the standard deviation of predictions of 3 pretrained atomic property models.
         Has the same length/shape as the returned predictions.
-        If use_ensemble == False, this will not be returned.
+        Only returned if use_ensemble == True and modelpath == None.
     """
 
     if isinstance(molecules, list):
@@ -134,10 +137,13 @@ def predict_multipoles(molecules, use_ensemble=True):
     else:
         molecule_list = [util.qcel_to_monomerdata(molecules)]
 
-    if use_ensemble:
-        atom_modelpaths = default_atom_modelpaths
+    if modelpath is not None:
+        atom_modelpaths = [modelpath]
     else:
-        atom_modelpaths = default_atom_modelpaths[:1]
+        if use_ensemble:
+            atom_modelpaths = default_atom_modelpaths
+        else:
+            atom_modelpaths = default_atom_modelpaths[:1]
 
     N = len(molecule_list)
 
@@ -175,7 +181,7 @@ def predict_multipoles(molecules, use_ensemble=True):
         mtp_stds.append(mtp_std)
         mtp_prds.append(mtp_prd)
 
-    if use_ensemble:
+    if len(atom_modelpaths) > 1:
         return mtp_prds, mtp_stds
     else:
         return mtp_prds

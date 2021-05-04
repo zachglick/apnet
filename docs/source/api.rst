@@ -6,6 +6,7 @@ Loading Data
 
 .. autofunction:: apnet.load_bms_dimer
 .. autofunction:: apnet.load_pickle
+.. autofunction:: apnet.load_monomer_pickle
 
 Predicting
 ----------
@@ -19,4 +20,4 @@ Predicting
 Training
 --------
 
-No model training functions yet, check back later.
+.. autofunction:: apnet.train_multipole_model
