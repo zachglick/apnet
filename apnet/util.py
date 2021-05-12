@@ -328,19 +328,21 @@ def load_pickle(file):
     return dimers, labels
 
 
-def load_monomer_pickle(file):
+def load_monomer_pickle(file, max_size=None):
     """Load multiple monomers from a :class:`~pandas.DataFrame`
 
     Loads monomers from the :class:`~pandas.DataFrame` format associated with the original AP-Net publication.
     Each row of the :class:`~pandas.DataFrame` corresponds to a molecular dimer.
 
-    The columns [`Z`, `R`, `total_charge`, `TQB`] are required.
+    The columns [`Z`, `R`, and `total_charge`] are required.
     `Z` is atom types (:class:`~numpy.ndarray` of `int` with shape (`n`,)).
-    `R` is atomic positions in Angstrom (:class:`~numpy.ndarray` of `float` with shape (`n`,3.)).
+    `R` is atomic positions in Angstrom (:class:`~numpy.ndarray` of `float` with shape (`n`,3)).
     `total_charge` are monomer charges (int).
 
-    The column `cartesian_multipoles` is optional.
+    The columns [`cartesian_multipoles`, `volume_ratios`, and `valence_widths`] are optional.
     `cartesian_multipoles` describes atom-centered charges, dipoles, and quadrupoles (:class:`~numpy.ndarray` of `float` with shape (`n`, 10). The ordering convention is [q, u_x, u_y, u_z, Q_xx, Q_xy, Q_xz, Q_yy, Q_yz, Q_zz], all in a.u.)
+    `volume_ratios` is the ratio of the volume of the atom-in-molecule to the free atom (:class:`~numpy.ndarray` of `float` with shape (`n`, 1), unitless
+    `valence_widths` is the width describing the valence electron density (:class:`~numpy.ndarray` of `float` with shape (`n`, 1), TODO: check units. a.u. ? inverse width?
 
     Parameters
     ----------
@@ -349,24 +351,48 @@ def load_monomer_pickle(file):
     
     Returns
     -------
-    monomers: list of :class:`~qcelemental.models.Molecule`
-    multipoles: list of :class:`~numpy.ndarray` or None
+    monomers : list of :class:`~qcelemental.models.Molecule`
+    cartesian_multipoles : list of :class:`~numpy.ndarray` or None
         None is returned if the `cartesian_multipoles` column is not present in the :class:`~pandas.DataFrame`
+    volume_ratios : list of :class:`~numpy.ndarray` or None
+        None is returned if the `volume_ratios` column is not present in the :class:`~pandas.DataFrame`
+    valence_widths : list of :class:`~numpy.ndarray` or None
+        None is returned if the `valence_widths` column is not present in the :class:`~pandas.DataFrame`
     """
 
     df = pd.read_pickle(file)
     N = len(df.index)
+
+    if max_size is not None and max_size < N:
+        df = df.head(max_size)
+        N = max_size
+
     R = df.R.tolist()
     Z = df.Z.tolist()
     TQ = df.total_charge.tolist()
     aQ = [TQ[i] / np.sum(Z[i] > 0) for i in range(N)]
-    labels = df['cartesian_multipoles'].to_numpy()
+
+    try:
+        cartesian_multipoles = df['cartesian_multipoles'].to_numpy()
+    except:
+        cartesian_multipoles = None
+
+    try:
+        volume_ratios = df['volume_ratios'].to_numpy()
+    except:
+        volume_ratios = None
+
+    try:
+        valence_widths = df['valence_widths'].to_numpy()
+    except:
+        valence_widths = None
+
 
     monomers = []
     for i in range(N):
         monomers.append(monomerdata_to_qcel(R[i], Z[i], aQ[i]))
 
-    return monomers, labels
+    return monomers, cartesian_multipoles, volume_ratios, valence_widths
 
 
 # ROTATION / TRAINING STUFF
@@ -382,7 +408,7 @@ def mae_mp(y_true, y_pred):
         return K.mean(K.abs(y_pred - y_true), axis=-1)
 
 
-def padded_monomerdata(molecule_list, multipoles, pad_dim):
+def padded_monomerdata(pad_dim, molecule_list, multipoles, ratios=None, widths=None):
 
     N = len(molecule_list)
     assert len(multipoles) == N
@@ -391,6 +417,8 @@ def padded_monomerdata(molecule_list, multipoles, pad_dim):
     Z = np.zeros((N, pad_dim))
     aQ = np.zeros((N, pad_dim, pad_dim, 1))
     MTP = np.zeros((N, pad_dim, 10))
+    h = np.zeros((N, pad_dim, 1))
+    v = np.zeros((N, pad_dim, 1))
 
     for i in range(N):
         n = molecule_list[i][0].shape[0]
@@ -398,13 +426,17 @@ def padded_monomerdata(molecule_list, multipoles, pad_dim):
         Z[i,:n] = molecule_list[i][1]
         aQ[i,:n,:n,0] = molecule_list[i][2]
         MTP[i][:n] = multipoles[i][:n,:10]
+        if ratios is not None:
+            h[i,:n] = ratios[i]
+        if widths is not None:
+            v[i,:n] = widths[i]
 
     trace = np.sum(MTP[:,:,[4,7,9]], axis=2)
     MTP[:,:,4] -= trace / 3.0
     MTP[:,:,7] -= trace / 3.0
     MTP[:,:,9] -= trace / 3.0
 
-    return R, Z, aQ, MTP
+    return R, Z, aQ, MTP, h, v
 
 def rotation_matrix(n):
     """ returns n rotation matrices for transformations in 3D cartesian space 
@@ -429,13 +461,20 @@ class RotationGenerator(tf.keras.utils.Sequence):
         self.R = R # nmol x natom x 3
         self.Z = Z # nmol x natom
         self.mol_charge = mol_charge
-        self.y = y # nmol x natom x 10
+        self.y = y # nmol x natom x 10 or nmal x natom x 12
         self.batch_size = batch_size
         self.shuffle = shuffle
 
         self.nmol = R.shape[0]
         self.natom = R.shape[1]
         self.mol_inds = np.arange(self.nmol)
+
+        if self.y.shape[2] == 10:
+            self.do_properties = False
+        elif self.y.shape[2] == 12:
+            self.do_properties = True
+        else:
+            raise Exception(f"Multipoles have the wrong shape")
 
         self.on_epoch_end()
 
@@ -465,7 +504,19 @@ class RotationGenerator(tf.keras.utils.Sequence):
         # quadrupole off-diagonal (Q_xy, Q_xz, Q_yz)
         y_ij_batch = self.y[batch_inds][:,:,[5,6,8]]
 
-        return [R_batch, Z_batch, Q_batch], [y_batch, y_i_batch, y_ii_batch, y_ij_batch]
+        if self.do_properties:
+
+            # hirshfeld volume ratios
+            y_h_batch = self.y[batch_inds][:,:,10]
+
+            #valence_widths
+            y_v_batch = self.y[batch_inds][:,:,11]
+
+            return [R_batch, Z_batch, Q_batch], [y_batch, y_i_batch, y_ii_batch, y_ij_batch, y_h_batch, y_v_batch]
+
+        else:
+
+            return [R_batch, Z_batch, Q_batch], [y_batch, y_i_batch, y_ii_batch, y_ij_batch]
 
     def on_epoch_end(self):
         """Updates indexes and perform random rotations after each epoch"""

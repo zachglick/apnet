@@ -140,11 +140,7 @@ class EPN_layer(Layer):
         return q
 
 
-
-
-
-
-def make_atom_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
+def make_atom_model(mus, etas, natom, nelem, nembed, nnodes, nmessage, do_properties=False):
 
     # cartesian coordinate input
     input_R = Input(shape=(natom, 3), ragged=False, dtype=tf.float64, name='input_R')                               # nmol x natom x 3
@@ -370,8 +366,10 @@ def make_atom_model(mus, etas, natom, nelem, nembed, nnodes, nmessage):
     y_h_ = Lambda(lambda x: x, name='h')(y_h_)
     y_v_ = Lambda(lambda x: x, name='v')(y_v_)
 
-    #output = [y_, y_i_, y_ii_, y_ij_, y_h_, y_v_]
-    output = [y_, y_i_, y_ii_, y_ij_]
+    if do_properties:
+        output = [y_, y_i_, y_ii_, y_ij_, y_h_, y_v_]
+    else:
+        output = [y_, y_i_, y_ii_, y_ij_]
 
     model = tf.keras.Model([input_R, input_Z, input_Q], output)
 

@@ -23,6 +23,10 @@ def predict_monomer_multipoles(model, RA, ZA, mask):
     return model([RA, ZA, mask], training=False)
 
 @tf.function(experimental_relax_shapes=True)
+def predict_monomer_properties(model, RA, ZA, mask):
+    return model([RA, ZA, mask], training=False)
+
+@tf.function(experimental_relax_shapes=True)
 def predict_dimer_sapt(model, feats):
     return model(feats, training=False)
 
@@ -94,9 +98,14 @@ def load_atom_model(path : str, pad_dim : int):
     if path_key not in atom_model_cache:
         if not os.path.isfile(path):
             raise Exception(f'{path} is not a valid path')
-        atom_model_cache[path_key] = models.make_atom_model(mus, etas, pad_dim, nelem, nembed, nnodes, nmessage)
-        atom_model_cache[path_key].load_weights(path)
-        atom_model_cache[path_key].call = tf.function(atom_model_cache[path_key].call, experimental_relax_shapes=True)
+        try:
+            atom_model_cache[path_key] = models.make_atom_model(mus, etas, pad_dim, nelem, nembed, nnodes, nmessage, do_properties=True)
+            atom_model_cache[path_key].load_weights(path)
+            atom_model_cache[path_key].call = tf.function(atom_model_cache[path_key].call, experimental_relax_shapes=True)
+        except:
+            atom_model_cache[path_key] = models.make_atom_model(mus, etas, pad_dim, nelem, nembed, nnodes, nmessage, do_properties=False)
+            atom_model_cache[path_key].load_weights(path)
+            atom_model_cache[path_key].call = tf.function(atom_model_cache[path_key].call, experimental_relax_shapes=True)
 
     return atom_model_cache[path_key]
 
@@ -595,3 +604,99 @@ def predict_sapt_common(common_monomer, monomers, use_ensemble=True, return_pair
         return sapt_prds, sapt_stds
     else:
         return sapt_prds
+
+def predict_cliff_properties(molecules, modelpath):
+    """Predict atomic properties for the Component Learned Intermolecular Force Field (CLIFF)
+
+    Using a trained neural network stored at `modelpath`, predicts atomic charge distributions in
+    the form of atom-centered multipoles (charge, dipole, and quadrupole), atomic volume ratios,
+    and the exponential width of atomic valence electron density. Predicted atomic charges are
+    guaranteed to sum to the total charge, and quadrupoles are guaranteed to be traceless.
+
+    Parameters
+    ----------
+    molecules : list of :class:`~qcelemental.models.Molecule`
+        One or more molecules to predict the atomic multipoles of. Each molecule must contain exactly
+        one molecular fragment.
+    modelpath : `str`, optional
+        Path to file of atomic property model weights to be used in prediction.
+
+    Returns
+    -------
+    predictions : list of :class:`dict`
+        A separate `dict` is returned for each molecule in `molecules`. Each `dict` contains the
+        following keys, all of which map to a :class:`numpy.ndarray` with the following shape:
+
+          - charge : (NATOM)
+          - dipoles : (NATOM, 3)
+          - quadrupoles : (NATOM, 3, 3)
+          - ratios : (NATOM)
+          - widths : (NATOM)
+    """
+
+    assert isinstance(molecules, list)
+    molecule_list = [util.qcel_to_monomerdata(molecule) for molecule in molecules]
+
+    N = len(molecule_list)
+
+    prds = []
+
+    for i, m in enumerate(molecule_list):
+
+        n = len(m[0])
+        n_pad = 10 * ((n + 9) // 10)
+
+        # get padded R/Z and total charge mask for CMPNN 
+        Rti = np.zeros((1, n_pad, 3))
+        Rti[0,:n,:] = m[0] 
+
+        Zti = np.zeros((1, n_pad))
+        Zti[0,:n] = m[1] 
+
+        aQti = np.zeros((1, n_pad, n_pad, 1))
+        aQti[0,:n,:n,0] = m[2]
+
+        # predict multipoles with CMPNN ensemble
+        mtp_prd = []
+        
+        atom_model = load_atom_model(modelpath, n_pad)
+
+        prd = predict_monomer_multipoles(atom_model, Rti, Zti, aQti)
+
+        charges = np.array(prd[0][0,:n])
+
+        dipoles = np.array(prd[1][0,:n])
+
+        quadrupoles_ii = prd[2][0,:n]
+        quadrupoles_ij = prd[3][0,:n]
+        quadrupoles = np.zeros((n, 3, 3))
+
+        quadrupoles[:,0,0] = quadrupoles_ii[:,0] # xx
+        quadrupoles[:,1,1] = quadrupoles_ii[:,1] # yy
+        quadrupoles[:,2,2] = quadrupoles_ii[:,2] # zz
+        quadrupoles[:,0,1] = quadrupoles_ij[:,0] # xy
+        quadrupoles[:,0,2] = quadrupoles_ij[:,1] # xz
+        quadrupoles[:,1,2] = quadrupoles_ij[:,2] # yz
+        quadrupoles[:,1,0] = quadrupoles[:,0,1] # yx
+        quadrupoles[:,2,0] = quadrupoles[:,0,2] # zx
+        quadrupoles[:,2,1] = quadrupoles[:,1,2] # zy
+
+        ratios = np.array(prd[4][0,:n])
+
+        widths = np.array(prd[5][0,:n])
+
+        print(charges.shape, dipoles.shape, quadrupoles.shape, ratios.shape, widths.shape)
+
+        prd = { "charges" : charges,
+                "dipoles" : dipoles,
+                "quadrupoles" : quadrupoles,
+                "ratios" : ratios,
+                "widths" : widths
+               }
+
+        prds.append(prd)
+
+    return prds
+
+
+
