@@ -17,6 +17,7 @@ import qcelemental as qcel
 from apnet import multipoles
 from apnet import util
 from apnet import models
+from apnet import constants
 
 @tf.function(experimental_relax_shapes=True)
 def predict_monomer_multipoles(model, RA, ZA, mask):
@@ -332,13 +333,14 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
 
     Returns
     -------
-    predictions : :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
-        A predicted SAPT interaction energy breakdown for each dimer (kcal / mol).
+    predictions : list of :class:`numpy.ndarray`
+        A predicted SAPT interaction energy breakdown for each dimer (kcal / mol) in dimers.
         If return_pairs == False, each prediction is a numpy.ndarray with shape (5,).
         If return_pairs == True, each prediction is a numpy.ndarray with shape (5, NA, NB).
-        The first dimension of length 5 indexes SAPT components:
+        The first dimension of each prediction (of length 5) indexes SAPT components:
         [total, electrostatics, exchange, induction, dispersion].
-    uncertainties: :class:`numpy.ndarray` or list of :class:`numpy.ndarray`
+        Total is the sum of the other four components (and therefore redundant).
+    uncertainties: list of :class:`numpy.ndarray`
         A prediction uncertainty for each dimer (kcal / mol). 
         Calculated as the standard deviation of predictions of 5 pretrained models.
         Has the same length/shape as the returned predictions.
@@ -370,6 +372,12 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
     sapt_stds = []
 
     for i, d in enumerate(dimer_list):
+
+        if d is None:
+            print(f"Skipping dimer {i}. Make sure the dimer has two fragments and only valid elements (H,C,N,O,F,Na,P,S,Cl,Br).")
+            sapt_prds.append(None)
+            sapt_stds.append(None)
+            continue
 
         nA, nB = len(d[0]), len(d[1])
         nA_pad, nB_pad = 10 * ((nA + 9) // 10), 10 * ((nB + 9) // 10)

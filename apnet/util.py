@@ -148,14 +148,20 @@ def make_features(RA, RB, ZA, ZB, QA, QB, MTP, ACSF_nmu=43, APSF_nmu=21, ACSF_et
 def qcel_to_dimerdata(dimer):
     """ proper qcel mol to ML-ready numpy arrays """
 
-    # this better be a dimer
+    # this better be a dimer (not a monomer, trimer, etc.)
     if  len(dimer.fragments) != 2:
-        raise AssertionError(f"A dimer must have exactly 2 molecular fragments, found {len(dimer.fragments)}")
+        #raise AssertionError(f"A dimer must have exactly 2 molecular fragments, found {len(dimer.fragments)}")
+        return None
 
     ZA = dimer.symbols[dimer.fragments[0]]
     ZB = dimer.symbols[dimer.fragments[1]]
-    ZA = np.array([constants.elem_to_z[za] for za in ZA])
-    ZB = np.array([constants.elem_to_z[zb] for zb in ZB])
+
+    # only some elements allowed
+    try:
+        ZA = np.array([constants.elem_to_z[za] for za in ZA])
+        ZB = np.array([constants.elem_to_z[zb] for zb in ZB])
+    except:
+        return None
 
     RA = dimer.geometry[dimer.fragments[0]] * constants.au2ang
     RB = dimer.geometry[dimer.fragments[1]] * constants.au2ang
