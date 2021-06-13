@@ -311,7 +311,7 @@ def predict_elst(dimers, use_ensemble=True, return_pairs=False):
 
 
 
-def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
+def predict_sapt(dimers, modelpath=None, use_ensemble=True, return_pairs=False):
     """Predict interaction energies with a pre-trained model
 
     Predicts the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
@@ -324,6 +324,9 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
     dimers : :class:`~qcelemental.models.Molecule` or list of :class:`~qcelemental.models.Molecule`
         One or more dimers to predict the interaction energy of. Each dimer must contain exactly
         two molecular fragments.
+    modelpath : `str`, optional
+        Path to file of interaction model weights to be used in prediction. If not specified,
+        the pre-trained SAPT0/aDZ model will be used.
     use_ensemble: `bool`, optional
         Do use an ensemble of 5 AP-Net models? This is more expensive, but improves the prediction
         accuracy and also provides a prediction uncertainty
@@ -355,17 +358,24 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
     else:
         dimer_list = [util.qcel_to_dimerdata(dimers)]
 
+    if modelpath is not None:
+        pair_modelpaths = [modelpath]
+        if use_ensemble:
+            atom_modelpaths = default_atom_modelpaths
+        else:
+            atom_modelpaths = default_atom_modelpaths[:1]
+    else:
+        if use_ensemble:
+            atom_modelpaths = default_atom_modelpaths
+            pair_modelpaths = default_pair_modelpaths
+        else:
+            atom_modelpaths = default_atom_modelpaths[:1]
+            pair_modelpaths = default_pair_modelpaths[:1]
+
     N = len(dimer_list)
 
-    if use_ensemble:
-        atom_modelpaths = default_atom_modelpaths
-        pair_modelpaths = default_pair_modelpaths
-    else:
-        atom_modelpaths = default_atom_modelpaths[:1]
-        pair_modelpaths = default_pair_modelpaths[:1]
-
     pred_timer.start('Loading Pair Models')
-    pair_models = [load_pair_model(path) for path in default_pair_modelpaths]
+    pair_models = [load_pair_model(path) for path in pair_modelpaths]
     pred_timer.stop('Loading Pair Models')
 
     sapt_prds = []
@@ -458,14 +468,14 @@ def predict_sapt(dimers, use_ensemble=True, return_pairs=False):
     pred_timer.stop('Total Prediction')
     pred_timer.print()
 
-    if use_ensemble:
+    if len(pair_modelpaths) > 1:
         return sapt_prds, sapt_stds
     else:
         return sapt_prds
 
 
 
-def predict_sapt_common(common_monomer, monomers, use_ensemble=True, return_pairs=False):
+def predict_sapt_common(common_monomer, monomers, modelpath=None, use_ensemble=True, return_pairs=False):
     """Predict interaction energies with a pre-trained model
 
     Predicts the interaction energy (at the SAPT0/aug-cc-pV(D+d)Z level of theory) for one or
@@ -523,14 +533,21 @@ def predict_sapt_common(common_monomer, monomers, use_ensemble=True, return_pair
 
     N = len(monomers)
 
-    if use_ensemble:
-        atom_modelpaths = default_atom_modelpaths
-        pair_modelpaths = default_pair_modelpaths
+    if modelpath is not None:
+        pair_modelpaths = [modelpath]
+        if use_ensemble:
+            atom_modelpaths = default_atom_modelpaths
+        else:
+            atom_modelpaths = default_atom_modelpaths[:1]
     else:
-        atom_modelpaths = default_atom_modelpaths[:1]
-        pair_modelpaths = default_pair_modelpaths[:1]
+        if use_ensemble:
+            atom_modelpaths = default_atom_modelpaths
+            pair_modelpaths = default_pair_modelpaths
+        else:
+            atom_modelpaths = default_atom_modelpaths[:1]
+            pair_modelpaths = default_pair_modelpaths[:1]
 
-    pair_models = [load_pair_model(path) for path in default_pair_modelpaths]
+    pair_models = [load_pair_model(path) for path in pair_modelpaths]
 
     nA = len(monomerA[0])
     atom_models_A = [load_atom_model(path, nA) for path in atom_modelpaths]
@@ -608,7 +625,7 @@ def predict_sapt_common(common_monomer, monomers, use_ensemble=True, return_pair
         sapt_prds.append(sapt_prd)
         sapt_stds.append(sapt_std)
 
-    if use_ensemble:
+    if len(pair_modelpaths) > 1:
         return sapt_prds, sapt_stds
     else:
         return sapt_prds

@@ -27,3 +27,5 @@ Training
 
 .. autofunction:: apnet.train_multipole_model
 .. autofunction:: apnet.train_cliff_model
+.. autofunction:: apnet.train_sapt_model
+.. autofunction:: apnet.transfer_sapt_model

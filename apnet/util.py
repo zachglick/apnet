@@ -325,7 +325,10 @@ def load_pickle(file):
     TQB = df.TQB.tolist()
     aQA = [TQA[i] / np.sum(ZA[i] > 0) for i in range(N)]
     aQB = [TQB[i] / np.sum(ZB[i] > 0) for i in range(N)]
-    labels = df[['Total_aug', 'Elst_aug', 'Exch_aug', 'Ind_aug', 'Disp_aug']].to_numpy()
+    try:
+        labels = df[['Total_aug', 'Elst_aug', 'Exch_aug', 'Ind_aug', 'Disp_aug']].to_numpy()
+    except:
+        labels = None
 
     dimers = []
     for i in range(N):
