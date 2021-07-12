@@ -472,6 +472,7 @@ def transfer_sapt_model(dimers_t, energies_t, dimers_v, energies_v, modelpath_ol
     adam_lr = kwargs.pop("adam_lr", 0.001)
     decay_rate = kwargs.pop("decay_rate", 0.2)
     epochs = kwargs.pop("epochs", 200)
+    freeze_layers = kwargs.pop("freeze_layers", True)
 
     print(batch_size, adam_lr, decay_rate, epochs)
 
@@ -501,7 +502,8 @@ def transfer_sapt_model(dimers_t, energies_t, dimers_v, energies_v, modelpath_ol
         if "linear" in layer.name:
             print(f"Leaving layer '{layer.name}' unfrozen for transfer learning")
         else:
-            layer.trainable = False
+            if freeze_layers:
+                layer.trainable = False
 
     print('Training Atom-Pair Energy Model...\n')
 
