@@ -31,8 +31,8 @@ setup(
     license="MIT",
     platforms=["any"], # TODO: is this true?
     package_data={"apnet": ["data/*.pkl",
-                            "atom_models/*.hdf5",
-                            "pair_models/*.h5",
+                            "atom_models/*",
+                            "pair_models/*",
                             ]
                  },
     install_requires=["numpy",
