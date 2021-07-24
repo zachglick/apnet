@@ -152,7 +152,7 @@ def load_bms_dimer(file):
     label = np.array([e_tot_aug, e_elst_aug, e_exch_aug, e_ind_aug, e_disp_aug])
     return dimer, label
 
-def load_dimer_dataset(file, max_size=None):
+def load_dimer_dataset(file, max_size=None, columns=["Total_aug", "Elst_aug", "Exch_aug", "Ind_aug", "Disp_aug"]):
     """Load multiple dimers from a :class:`~pandas.DataFrame`
 
     Loads dimers from the :class:`~pandas.DataFrame` format associated with the original AP-Net publication.
@@ -194,7 +194,7 @@ def load_dimer_dataset(file, max_size=None):
     aQA = [TQA[i] / np.sum(ZA[i] > 0) for i in range(N)]
     aQB = [TQB[i] / np.sum(ZB[i] > 0) for i in range(N)]
     try:
-        labels = df[['Total_aug', 'Elst_aug', 'Exch_aug', 'Ind_aug', 'Disp_aug']].to_numpy()
+        labels = df[columns].to_numpy()
     except:
         labels = None
 

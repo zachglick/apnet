@@ -72,11 +72,16 @@ class PairDataLoader:
         if energies is not None:
             self.has_energies = True
             self.IE_list = np.array(energies, dtype=np.float32)
+
             # todo: clean this up
-            if self.IE_list.shape[1] == 4:
+            if self.IE_list.shape[1] == 1:
+                pass
+            elif self.IE_list.shape[1] == 4:
                 pass
             elif self.IE_list.shape[1] == 5:
                 self.IE_list = self.IE_list[:,1:]
+            else:
+                raise Exception("Didn't recognize shape of `energies`:", self.IE_list.shape)
         else:
             self.has_energies = False
 
@@ -224,6 +229,7 @@ class PairModel:
     """ todo """
 
     def __init__(self, atom_model, **kwargs):
+        """ blah __init__ """
 
         # todo : pass params
         # todo : better atom_model handling
@@ -232,6 +238,7 @@ class PairModel:
 
     @classmethod
     def from_file(cls, model_path):
+        """ blah from_file"""
 
         obj = cls(None)
         obj.model = tf.keras.models.load_model(model_path)
@@ -239,6 +246,7 @@ class PairModel:
 
     @classmethod
     def pretrained(cls, index=0):
+        """ blah pretrained"""
 
         obj = cls(None)
         model_path = f"{ROOT_DIR}/pair_models/pair{index}"
@@ -428,11 +436,213 @@ class PairModel:
 
     # Possible TODO: predict_elst, transfer_learning, gradient
 
+    def transfer(self, dimers_t, energies_t, dimers_v, energies_v, model_path=None, log_path=None, **kwargs):
+
+        # redirect stdout to log file, if specified
+        if log_path is not None:
+            default_stdout = sys.stdout
+            log_file = open(log_path, "a")
+            sys.stdout = log_file
+
+        # refuse to overwrite an existing model file, if specified
+        if model_path is not None:
+            if os.path.exists(model_path):
+                raise Exception(f"{model_path=} already exists. Delete existing model or choose a new `model_path`")
+
+        print("~~ Transfer Learning Pair Model ~~", flush=True)
+        # todo : print time and date. maybe machine specs?
+
+        if model_path is not None:
+            print(f"\nSaving model to '{model_path}'", flush=True)
+        else:
+            print("\nNo `model_path` provided, not saving model", flush=True)
+
+        # network hyperparameters
+        # todo: get kwargs from init(), not from train()
+        n_message = kwargs.get("n_message", 3)
+        n_neuron = kwargs.get("n_neuron", 128)
+        n_embed = kwargs.get("n_embed", 8)
+        n_rbf = kwargs.get("n_rbf", 8)
+        r_cut_im = kwargs.get("r_cut_im", 8.0)
+
+        print("\nNetwork Hyperparameters:", flush=True)
+        print(f"  {n_message=}", flush=True)
+        print(f"  {n_neuron=}", flush=True)
+        print(f"  {n_embed=}", flush=True)
+        print(f"  {n_rbf=}", flush=True)
+        print(f"  {r_cut_im=}", flush=True)
+        
+        # training hyperparameters
+        n_epochs = kwargs.get("n_epochs", 15)
+        batch_size = kwargs.get("batch_size", 16)
+        learning_rate = kwargs.get("learning_rate", 0.0005)
+        learning_rate_decay = 0.0 #TODO
+
+        print("\nTraining Hyperparameters:", flush=True)
+        print(f"  {n_epochs=}", flush=True)
+        print(f"  {batch_size=}", flush=True)
+        print(f"  {learning_rate=}", flush=True)
+        print(f"  {learning_rate_decay=}", flush=True)
+
+        Nt = len(dimers_t)
+        Nv = len(dimers_v)
+
+        print("\nDataset:", flush=True)
+        print(f"  n_dimers_train={Nt}", flush=True)
+        print(f"  n_dimers_val={Nv}", flush=True)
+
+        inds_t = np.arange(Nt)
+        inds_v = np.arange(Nv)
+
+        np.random.seed(4201)
+        np.random.shuffle(inds_t)
+        num_batches = math.ceil(Nt / batch_size)
+
+        # TODO: replaced hardcoded 200 dimers. Probably want a data_loader.get_large_batch
+        inds_t_chunks = [inds_t[i*200:min((i+1)*200,Nt)] for i in range(math.ceil(Nt / 200))]
+        inds_v_chunks = [inds_v[i*200:min((i+1)*200,Nv)] for i in range(math.ceil(Nv / 200))]
+
+        print("\nProcessing Dataset...", flush=True)
+        time_loaddata_start = time.time()
+        data_loader_t = PairDataLoader(dimers_t, energies_t, 5.0, r_cut_im)
+        data_loader_v = PairDataLoader(dimers_v, energies_v, 5.0, r_cut_im)
+        dt_loaddata = time.time() - time_loaddata_start
+        print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
+
+        inp_t, energy_t = data_loader_t.get_data(inds_t)
+        inp_v, energy_v = data_loader_v.get_data(inds_v)
+
+        inp_t_chunks = [data_loader_t.get_data(inds_t_i) for inds_t_i in inds_t_chunks]
+        inp_v_chunks = [data_loader_v.get_data(inds_v_i) for inds_v_i in inds_v_chunks]
+
+        preds_t = np.concatenate([test_batch_transfer(self.model, inp_t_i[0]) for inp_t_i in inp_t_chunks], axis=0)
+        preds_v = np.concatenate([test_batch_transfer(self.model, inp_v_i[0]) for inp_v_i in inp_v_chunks], axis=0)
+
+        mae_t = np.average(np.abs(np.array(preds_t) - energy_t))
+        mae_v = np.average(np.abs(np.array(preds_v) - energy_v))
+
+        loss_v_best = mae_v
+
+        print("                                       Total", flush=True)
+        print(f"  (Pre-training)             MAE: {mae_t:>7.3f}/{mae_v:<7.3f}", flush=True)
+
+        if model_path is not None:
+            pass
+            #self.model.save(model_path)
+
+        if False:
+            learning_rate_scheduler = keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=learning_rate, decay_steps=(num_batches * 60), decay_rate=0.5, staircase=True)
+            optimizer = keras.optimizers.Adam(learning_rate=learning_rate_scheduler)
+        else:
+            optimizer = tf.keras.optimizers.Adam(learning_rate=learning_rate)
+
+        loss_fn = tf.keras.losses.MSE
+
+        for ep in range(n_epochs):
+
+            t1 = time.time()
+
+            preds_t  = []
+            err_t = []
+
+            for batch in range(num_batches):
+                batch_start = batch_size * batch
+                inds_batch = inds_t[batch_start:min(Nt,batch_start+batch_size)]
+
+                inp_batch, ie_batch = data_loader_t.get_data(inds_batch)
+
+                preds_batch = train_batch_transfer(self.model, optimizer, loss_fn, inp_batch, ie_batch)
+                preds_batch = tf.reshape(preds_batch, [-1, 1])
+
+                preds_t.append(preds_batch)
+                err_t.append(preds_batch - ie_batch)
+
+
+            preds_t = np.concatenate(preds_t)
+            err_t = np.concatenate(err_t)
+            mae_t = np.average(np.abs(err_t))
+
+            preds_v = np.concatenate([test_batch_transfer(self.model, inp_v_i[0]) for inp_v_i in inp_v_chunks])
+            mae_v = np.average(np.abs(np.array(preds_v) - energy_v))
+
+            loss_v = mae_v
+
+            np.random.shuffle(inds_t)
+
+            dt = time.time() - t1
+
+            if loss_v < loss_v_best:
+                if model_path is not None:
+                    pass
+                    #self.model.save(model_path)
+                loss_v_best = loss_v
+                improved = "*"
+            else:
+                improved = ""
+
+            print(f'EPOCH: {ep:4d} ({dt:<6.1f} sec)     MAE: {mae_t:>7.3f}/{mae_v:<7.3f}  {improved}', flush=True)
+
+        if log_path is not None:
+            sys.stdout = default_stdout
+            log_file.close()
+
+    def predict(self, dimers):
+
+        N = len(dimers)
+
+        inds = np.arange(N)
+        # TODO: replaced hardcoded 200 molecules. Probably want a data_loader.get_large_batch
+
+        inds_chunks = [inds[i*200:min((i+1)*200,N)] for i in range(math.ceil(N / 200))]
+
+        print("Processing Dataset...", flush=True)
+        time_loaddata_start = time.time()
+        data_loader = PairDataLoader(dimers, None, 5.0, self.model.get_config()["r_cut_im"])
+        dt_loaddata = time.time() - time_loaddata_start
+        print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
+
+        print("\nPredicting Interaction Energies...", flush=True)
+        time_predenergy_start = time.time()
+        inp_chunks = [data_loader.get_data(inds_i) for inds_i in inds_chunks]
+        preds = np.concatenate([test_batch(self.model, inp_i) for inp_i in inp_chunks], axis=0)
+        dt_predenergy = time.time() - time_predenergy_start
+        print(f"Done in {dt_predenergy:.2f} seconds", flush=True)
+
+        return np.array(preds)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 @tf.function(experimental_relax_shapes=True)
 def train_batch(model, optimizer, loss_fn, inp, ie):
-
-    #ie = tf.cast(ie, tf.float32)
 
     with tf.GradientTape() as tape:
 
@@ -450,11 +660,41 @@ def train_batch(model, optimizer, loss_fn, inp, ie):
 @tf.function(experimental_relax_shapes=True)
 def test_batch(model, inp):
 
-    preds  = model(inp, training=False)
+    preds = model(inp, training=False)
     preds = tf.reshape(preds, [-1, 4])
 
     return preds
 
+
+
+
+
+@tf.function(experimental_relax_shapes=True)
+def train_batch_transfer(model, optimizer, loss_fn, inp, ie):
+
+    with tf.GradientTape() as tape:
+
+        preds = model(inp, training=True)
+        preds = tf.reshape(preds, [-1, 4])
+        preds = tf.math.reduce_sum(preds, axis=1, keepdims=True)
+
+        preds_flat = tf.reshape(preds, [-1])
+        ie_flat = tf.reshape(ie, [-1])
+        loss_value = loss_fn(ie_flat, preds_flat)
+
+    grads = tape.gradient(loss_value, model.trainable_weights)
+    optimizer.apply_gradients(zip(grads, model.trainable_weights))
+    return preds
+
+
+@tf.function(experimental_relax_shapes=True)
+def test_batch_transfer(model, inp):
+
+    preds = model(inp, training=False)
+    preds = tf.reshape(preds, [-1, 4])
+    preds = tf.math.reduce_sum(preds, axis=1, keepdims=True)
+
+    return preds
 
 
 if __name__ == "__main__":
