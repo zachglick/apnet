@@ -73,3 +73,8 @@ For now, stick to the installation instructions in this README.
 <!--* Predict atomic charge distributions with a pre-trained model-->
 <!--* Train your own interaction energy or atomic property model-->
 <!--To get started, check out the [documentation page](file:///Users/zachglick/gits/AP-Net-mp-temp/docs/build/html/index.html). (TODO: hook up readthedocs)-->
+
+## Common Errors
+
+A message such as "NotImplementedError: Cannot convert a symbolic Tensor to a numpy array. This error may indicate that you're trying to pass a Tensor to a NumPy call, which is not supported" can occur for incompatible versions of tensorflow and numpy.
+Make sure to avoid changing the version of numpy in your environment after installation.
