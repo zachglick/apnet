@@ -15,7 +15,7 @@ from apnet.layers import DistanceLayer, FeedForwardLayer
 #################
 
 target_dim = 1 # target property dimension
-max_Z = 35 # largest atomic number
+max_Z = 118 # largest atomic number
 
 #################
 

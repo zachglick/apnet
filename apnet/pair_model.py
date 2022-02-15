@@ -140,6 +140,11 @@ class PairDataLoader:
 
         return inp, target_ie
 
+    def get_sizes(self, inds):
+        """ return a list of (atoms_in_monomerA, atoms_in_monomerB) tuples """
+
+        return [(self.RA_list[ind].shape[0], self.RB_list[ind].shape[0]) for ind in inds]
+
     def edges(self, R):
     
         natom = np.shape(R)[0]
@@ -213,9 +218,8 @@ class PairDataLoader:
 
         # only some elements allowed; todo: better error message
         try:
-            # todo: int
-            ZA = np.array([constants.elem_to_z[za] for za in dimer.symbols[dimer.fragments[0]]], dtype=np.float32)
-            ZB = np.array([constants.elem_to_z[zb] for zb in dimer.symbols[dimer.fragments[1]]], dtype=np.float32)
+            ZA = np.array([constants.elem_to_z[za] for za in dimer.symbols[dimer.fragments[0]]], dtype=np.int32)
+            ZB = np.array([constants.elem_to_z[zb] for zb in dimer.symbols[dimer.fragments[1]]], dtype=np.int32)
         except:
             return None
 
@@ -434,7 +438,87 @@ class PairModel:
 
         return np.array(preds)
 
-    # Possible TODO: predict_elst, transfer_learning, gradient
+    def predict_pairs(self, dimers):
+
+        N = len(dimers)
+
+        inds = np.arange(N)
+        # TODO: replaced hardcoded 200 molecules. Probably want a data_loader.get_large_batch
+
+        inds_chunks = [inds[i*200:min((i+1)*200,N)] for i in range(math.ceil(N / 200))]
+
+        print("Processing Dataset...", flush=True)
+        time_loaddata_start = time.time()
+        data_loader = PairDataLoader(dimers, None, 5.0, self.model.get_config()["r_cut_im"])
+        dt_loaddata = time.time() - time_loaddata_start
+        print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
+
+        print("\nPredicting Interaction Energies...", flush=True)
+        time_predenergy_start = time.time()
+        inp_chunks = [data_loader.get_data(inds_i) for inds_i in inds_chunks]
+        sizes_chunks = [data_loader.get_sizes(inds_i) for inds_i in inds_chunks]
+        preds = [test_batch_pairs(self.model, inp_i) for inp_i in inp_chunks]
+        
+        dimer_preds_chunks = [pred[0] for pred in preds]
+        pair_preds_chunks = [pred[1] for pred in preds]
+        pair_mtp_sr_chunks = [pred[2] for pred in preds]
+        pair_mtp_lr_chunks = [pred[3] for pred in preds]
+
+        dimer_preds = np.concatenate(dimer_preds_chunks, axis=0)
+        dt_predenergy = time.time() - time_predenergy_start
+        print(f"Done in {dt_predenergy:.2f} seconds", flush=True)
+
+        for chunk_ind in range(len(inp_chunks)):
+            inp_chunk = inp_chunks[chunk_ind]
+            inds_chunk = inds_chunks[chunk_ind]
+            sizes_chunk = sizes_chunks[chunk_ind]
+
+            pair_preds_chunk = pair_preds_chunks[chunk_ind]
+            pair_mtp_sr_chunk = pair_mtp_sr_chunks[chunk_ind]
+            pair_mtp_lr_chunk = pair_mtp_lr_chunks[chunk_ind]
+
+            dimer_inds = inp_chunk["dimer_ind"]
+            dimer_inds_lr = inp_chunk["dimer_ind_lr"]
+
+            print(pair_preds_chunk.shape, pair_mtp_sr_chunk.shape, pair_mtp_lr_chunk.shape, dimer_inds.shape, dimer_inds_lr.shape)
+
+            pair_list = [np.zeros((size[0], size[1], 5)) for size in sizes_chunk]
+
+
+            for dimer_inds_loc, dimer_ind in enumerate(dimer_inds):
+
+                print(dimer_ind, pair_preds_chunk[dimer_inds_loc], pair_mtp_sr[dimer_inds_loc])
+
+                pair_list[dimer_ind][0][0]
+
+            chunk_atom_shift_a = 0
+            chunk_atom_shift_b = 0
+            dimer_ind_loc = 0
+            dimer_ind_lr_loc = 0
+            for i in range(len(inp_chunk)):
+                chunk_atom_shift_a += sizes_chunk[i][0]
+                chunk_atom_shift_b += sizes_chunk[j][1]
+            print(chunk_atom_shift_a, inp_chunks["RA"].shape, chunk_atom_shift_b, inp_chunks["RB"].shape) 
+
+
+
+
+            #ia_total = 0, ib_total = 0
+            #ia_dimer = 0, ib_dimer = 0
+
+            #while i_dimer_ind < len(dimer_ind):
+
+            #for i, di in enumerate(dimer_ind):
+            #    pair_list[di][
+
+        #print(len(inp_chunks))
+        #print(type(inp_chunks[0]))
+        #print(inp_chunks[0].keys())
+        #print(inp_chunks[0]["dimer_ind"].shape)
+        #print(inp_chunks[0]["dimer_ind_lr"].shape)
+        #print(size_chunks)
+
+        return np.array(dimer_preds)
 
     def transfer(self, dimers_t, energies_t, dimers_v, energies_v, model_path=None, log_path=None, **kwargs):
 
@@ -527,8 +611,7 @@ class PairModel:
         print(f"  (Pre-training)             MAE: {mae_t:>7.3f}/{mae_v:<7.3f}", flush=True)
 
         if model_path is not None:
-            pass
-            #self.model.save(model_path)
+            self.model.save(model_path)
 
         if False:
             learning_rate_scheduler = keras.optimizers.schedules.ExponentialDecay(initial_learning_rate=learning_rate, decay_steps=(num_batches * 60), decay_rate=0.5, staircase=True)
@@ -573,8 +656,7 @@ class PairModel:
 
             if loss_v < loss_v_best:
                 if model_path is not None:
-                    pass
-                    #self.model.save(model_path)
+                    self.model.save(model_path)
                 loss_v_best = loss_v
                 improved = "*"
             else:
@@ -586,67 +668,14 @@ class PairModel:
             sys.stdout = default_stdout
             log_file.close()
 
-    def predict(self, dimers):
-
-        N = len(dimers)
-
-        inds = np.arange(N)
-        # TODO: replaced hardcoded 200 molecules. Probably want a data_loader.get_large_batch
-
-        inds_chunks = [inds[i*200:min((i+1)*200,N)] for i in range(math.ceil(N / 200))]
-
-        print("Processing Dataset...", flush=True)
-        time_loaddata_start = time.time()
-        data_loader = PairDataLoader(dimers, None, 5.0, self.model.get_config()["r_cut_im"])
-        dt_loaddata = time.time() - time_loaddata_start
-        print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
-
-        print("\nPredicting Interaction Energies...", flush=True)
-        time_predenergy_start = time.time()
-        inp_chunks = [data_loader.get_data(inds_i) for inds_i in inds_chunks]
-        preds = np.concatenate([test_batch(self.model, inp_i) for inp_i in inp_chunks], axis=0)
-        dt_predenergy = time.time() - time_predenergy_start
-        print(f"Done in {dt_predenergy:.2f} seconds", flush=True)
-
-        return np.array(preds)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    # Possible TODO: predict_elst, gradient
 
 @tf.function(experimental_relax_shapes=True)
 def train_batch(model, optimizer, loss_fn, inp, ie):
 
     with tf.GradientTape() as tape:
 
-        preds = model(inp, training=True)
+        preds, _, _, _ = model(inp, training=True)
         preds = tf.reshape(preds, [-1, 4])
 
         preds_flat = tf.reshape(preds, [-1])
@@ -660,12 +689,22 @@ def train_batch(model, optimizer, loss_fn, inp, ie):
 @tf.function(experimental_relax_shapes=True)
 def test_batch(model, inp):
 
-    preds = model(inp, training=False)
+    preds, _, _, _ = model(inp, training=False)
     preds = tf.reshape(preds, [-1, 4])
 
     return preds
 
+@tf.function(experimental_relax_shapes=True)
+def test_batch_pairs(model, inp):
 
+    dimer_preds, pair_preds, pair_mtp_sr, pair_mtp_lr = model(inp, training=False)
+    dimer_preds = tf.reshape(dimer_preds, [-1, 4])
+
+    print("pair_preds", pair_preds.shape)
+    print("pair_mtp_sr", pair_mtp_sr.shape)
+    print("pair_mtp_lr", pair_mtp_lr.shape)
+
+    return dimer_preds, pair_preds, pair_mtp_sr, pair_mtp_lr
 
 
 
@@ -674,7 +713,7 @@ def train_batch_transfer(model, optimizer, loss_fn, inp, ie):
 
     with tf.GradientTape() as tape:
 
-        preds = model(inp, training=True)
+        preds, _, _, _ = model(inp, training=True)
         preds = tf.reshape(preds, [-1, 4])
         preds = tf.math.reduce_sum(preds, axis=1, keepdims=True)
 
@@ -690,7 +729,7 @@ def train_batch_transfer(model, optimizer, loss_fn, inp, ie):
 @tf.function(experimental_relax_shapes=True)
 def test_batch_transfer(model, inp):
 
-    preds = model(inp, training=False)
+    preds, _, _, _ = model(inp, training=False)
     preds = tf.reshape(preds, [-1, 4])
     preds = tf.math.reduce_sum(preds, axis=1, keepdims=True)
 

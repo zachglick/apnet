@@ -4,28 +4,22 @@ API Documentation
 Loading Data
 ------------
 
-.. autofunction:: apnet.load_bms_dimer
-.. autofunction:: apnet.load_pickle
-.. autofunction:: apnet.load_monomer_pickle
+.. autofunction:: apnet.load_dimer_dataset
+.. autofunction:: apnet.load_monomer_dataset
 
-Energy Prediction
------------------
+Atomic Property Prediction
+--------------------------
 
-.. autofunction:: apnet.predict_sapt
-.. autofunction:: apnet.predict_sapt_common
-.. autofunction:: apnet.predict_elst
+.. autoclass:: apnet.AtomModel
+   :members:
 
-Property Prediction
--------------------
-
-.. autofunction:: apnet.predict_multipoles
-.. autofunction:: apnet.predict_cliff_properties
+   .. automethod:: __init__
 
 
-Training
---------
+Interaction Energy Prediction
+-----------------------------
 
-.. autofunction:: apnet.train_multipole_model
-.. autofunction:: apnet.train_cliff_model
-.. autofunction:: apnet.train_sapt_model
-.. autofunction:: apnet.transfer_sapt_model
+.. autoclass:: apnet.PairModel
+   :members:
+
+   .. automethod:: __init__

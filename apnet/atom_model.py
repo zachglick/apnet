@@ -132,8 +132,7 @@ class AtomDataLoader:
             raise AssertionError(f"A molecule must have exactly 1 molecular fragment, found {len(molecule.fragments)}")
 
         R = np.array(molecule.geometry, dtype=np.float32) * constants.au2ang
-        # todo: int
-        Z = np.array([constants.elem_to_z[z] for z in molecule.symbols], dtype=np.float32)
+        Z = np.array([constants.elem_to_z[z] for z in molecule.symbols], dtype=np.int32)
         total_charge = int(molecule.molecular_charge)
 
         return (R, Z, total_charge)
@@ -271,7 +270,7 @@ class AtomModel:
         loss_v_best = mse_charge_v + mse_dipole_v + mse_qpole_v
 
         print("                                         Charge          Dipole        Quadrupole", flush=True)
-        print(f"  (Pre-training)                MAE: {mae_charge_t:>7.3f}/{mae_charge_v:<7.3f} {mae_dipole_t:>7.3f}/{mae_dipole_v:<7.3f} {mae_qpole_t:>7.3f}/{mae_qpole_v:<7.3f}", flush=True)
+        print(f"  (Pre-training)                MAE: {mae_charge_t:>7.4f}/{mae_charge_v:<7.4f} {mae_dipole_t:>7.4f}/{mae_dipole_v:<7.4f} {mae_qpole_t:>7.4f}/{mae_qpole_v:<7.4f}", flush=True)
 
         if model_path is not None:
             self.model.save(model_path)
@@ -349,7 +348,7 @@ class AtomModel:
             else:
                 improved = ""
 
-            print(f"  EPOCH: {ep:4d} ({dt:<7.2f} sec)     MAE: {mae_charge_t:>7.3f}/{mae_charge_v:<7.3f} {mae_dipole_t:>7.3f}/{mae_dipole_v:<7.3f} {mae_qpole_t:>7.3f}/{mae_qpole_v:<7.3f} {improved}", flush=True)
+            print(f"  EPOCH: {ep:4d} ({dt:<7.2f} sec)     MAE: {mae_charge_t:>7.4f}/{mae_charge_v:<7.4f} {mae_dipole_t:>7.4f}/{mae_dipole_v:<7.4f} {mae_qpole_t:>7.4f}/{mae_qpole_v:<7.4f} {improved}", flush=True)
         
         preds_all_t = [test_batch(self.model, inp_t_i[0]) for inp_t_i in inp_t_chunks]
         preds_charge_t = np.concatenate([pred[0] for pred in preds_all_t], axis=0)

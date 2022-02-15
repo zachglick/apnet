@@ -14,7 +14,7 @@ from apnet.layers import DistanceLayer, FeedForwardLayer
 
 #################
 
-max_Z = 35 # largest atomic number
+max_Z = 118 # largest atomic number
 
 #################
 
@@ -45,13 +45,16 @@ def get_messages(h0, h, rbf, e_source, e_target):
 
     return tf.concat([h_all, h_all_dot, rbf], axis=-1)
 
-def get_pair(hA, hB, rbf, e_source, e_target):
+def get_pair(hA, hB, qA, qB, rbf, e_source, e_target):
 
     hA_source = tf.gather(hA, e_source)
     hB_target = tf.gather(hB, e_target)
 
+    qA_source = tf.gather(qA, e_source)
+    qB_target = tf.gather(qB, e_target)
+
     # todo: outer product
-    return tf.concat([hA_source, hB_target, rbf], axis=-1)
+    return tf.concat([hA_source, hB_target, qA_source, qB_target, rbf], axis=-1)
 
 class KerasPairModel(tf.keras.Model):
 
@@ -144,8 +147,6 @@ class KerasPairModel(tf.keras.Model):
         #E_elst =  627.509 * (E_qq + E_qu + E_uu)
 
         return E_elst
-
-
 
 
     def call(self, inputs):
@@ -291,8 +292,8 @@ class KerasPairModel(tf.keras.Model):
         hB = tf.keras.layers.Flatten()(tf.concat(hB_list, axis=-1))
 
         # atom-pair features are a combo of atomic hidden states and the interatomic distance
-        hAB = get_pair(hA, hB, rbf_sr, e_ABsr_source, e_ABsr_target)
-        hBA = get_pair(hB, hA, rbf_sr, e_ABsr_target, e_ABsr_source)
+        hAB = get_pair(hA, hB, qA, qB, rbf_sr, e_ABsr_source, e_ABsr_target)
+        hBA = get_pair(hB, hA, qB, qA, rbf_sr, e_ABsr_target, e_ABsr_source)
 
 
         # project the directional atomic hidden states along the interatomic axis
@@ -322,11 +323,11 @@ class KerasPairModel(tf.keras.Model):
         E_sr = tf.einsum('xy,x->xy', E_sr, cutoff)
 
         # sum atom-pair predictions to get dimer predictions
-        E_sr = tf.math.segment_sum(E_sr, dimer_ind)
+        E_sr_dimer = tf.math.segment_sum(E_sr, dimer_ind)
 
         # padding necessary in case some dimers had zero short-range atom pairs
-        dimer_padder_sr = tf.convert_to_tensor([[0,ndimer-tf.shape(E_sr)[0]], [0,0]])
-        E_sr = tf.pad(E_sr, dimer_padder_sr)
+        dimer_padder_sr = tf.convert_to_tensor([[0,ndimer-tf.shape(E_sr_dimer)[0]], [0,0]])
+        E_sr_dimer = tf.pad(E_sr_dimer, dimer_padder_sr)
 
         ####################################################
         ### predict multipole electrostatic interactions ###
@@ -334,24 +335,24 @@ class KerasPairModel(tf.keras.Model):
 
         # electrostatics between close atoms (we have to combine with NN IE)
         E_elst_sr = self.mtp_elst(qA, muA, quadA, qB, muB, quadB, e_ABsr_source, e_ABsr_target, dR_sr, dR_sr_xyz)
-        E_elst_sr = tf.math.segment_sum(E_elst_sr, dimer_ind)
-        E_elst_sr = tf.reshape(E_elst_sr, [-1, 1])
-        E_elst_sr = tf.pad(E_elst_sr, dimer_padder_sr)
+        E_elst_sr_dimer = tf.math.segment_sum(E_elst_sr, dimer_ind)
+        E_elst_sr_dimer = tf.reshape(E_elst_sr_dimer, [-1, 1])
+        E_elst_sr_dimer = tf.pad(E_elst_sr_dimer, dimer_padder_sr)
 
         # electrostatics between distance atoms (these atoms have zero NN IE)
         E_elst_lr = self.mtp_elst(qA, muA, quadA, qB, muB, quadB, e_ABlr_source, e_ABlr_target, dR_lr, dR_lr_xyz)
-        E_elst_lr = tf.math.segment_sum(E_elst_lr, dimer_ind_lr)
-        E_elst_lr = tf.reshape(E_elst_lr, [-1, 1])
-        dimer_padder_lr = tf.convert_to_tensor([[0,ndimer-tf.shape(E_elst_lr)[0]], [0,0]])
-        E_elst_lr = tf.pad(E_elst_lr, dimer_padder_lr)
+        E_elst_lr_dimer = tf.math.segment_sum(E_elst_lr, dimer_ind_lr)
+        E_elst_lr_dimer = tf.reshape(E_elst_lr_dimer, [-1, 1])
+        dimer_padder_lr = tf.convert_to_tensor([[0,ndimer-tf.shape(E_elst_lr_dimer)[0]], [0,0]])
+        E_elst_lr_dimer = tf.pad(E_elst_lr_dimer, dimer_padder_lr)
 
-        E_elst = tf.pad(E_elst_sr + E_elst_lr, tf.constant([[0,0], [0,3]]))
+        E_elst_dimer = tf.pad(E_elst_sr_dimer + E_elst_lr_dimer, tf.constant([[0,0], [0,3]]))
 
         #########################
         ### interation energy ###
         #########################
 
-        return E_sr + E_elst
+        return E_sr_dimer + E_elst_dimer, E_sr, E_elst_sr, E_elst_lr
 
 
     def get_config(self):
