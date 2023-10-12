@@ -10,3 +10,4 @@ __credits__ = "Georgia Institute of Technology"
 from .util import load_dimer_dataset, load_monomer_dataset
 from .atom_model import AtomModel
 from .pair_model import PairModel
+from .bms_functions import predict_sapt, predict_sapt_common

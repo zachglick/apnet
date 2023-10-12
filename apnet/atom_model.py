@@ -383,13 +383,13 @@ class AtomModel:
 
         inds_chunks = [inds[i*200:min((i+1)*200,N)] for i in range(math.ceil(N / 200))]
 
-        print("Processing Dataset...", flush=True)
+        #print("Processing Dataset...", flush=True)
         time_loaddata_start = time.time()
         data_loader = AtomDataLoader(molecules, None, self.model.get_config()["r_cut"])
         dt_loaddata = time.time() - time_loaddata_start
-        print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
+        #print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
 
-        print("\nPredicting Atomic Properties...", flush=True)
+        #print("\nPredicting Atomic Properties...", flush=True)
         time_predprop_start = time.time()
         inp_chunks = [data_loader.get_data(inds_i) for inds_i in inds_chunks]
         preds_all = [test_batch(self.model, inp_i) for inp_i in inp_chunks]
@@ -415,7 +415,7 @@ class AtomModel:
             multipoles.append(mol_multipole)
 
         dt_predprop = time.time() - time_predprop_start
-        print(f"Done in {dt_predprop:.2f} seconds", flush=True)
+        #print(f"Done in {dt_predprop:.2f} seconds", flush=True)
 
         return np.array(multipoles)
 

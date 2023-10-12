@@ -414,111 +414,99 @@ class PairModel:
             sys.stdout = default_stdout
             log_file.close()
 
-    def predict(self, dimers):
+    def predict(self, dimers, batch_size=200):
 
         N = len(dimers)
 
         inds = np.arange(N)
         # TODO: replaced hardcoded 200 molecules. Probably want a data_loader.get_large_batch
 
-        inds_chunks = [inds[i*200:min((i+1)*200,N)] for i in range(math.ceil(N / 200))]
+        inds_batches = [inds[i*batch_size:min((i+1)*batch_size,N)] for i in range(math.ceil(N / batch_size))]
 
-        print("Processing Dataset...", flush=True)
+        #print("Processing Dataset...", flush=True)
         time_loaddata_start = time.time()
         data_loader = PairDataLoader(dimers, None, 5.0, self.model.get_config()["r_cut_im"])
         dt_loaddata = time.time() - time_loaddata_start
-        print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
+        #print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
 
-        print("\nPredicting Interaction Energies...", flush=True)
+        #print("\nPredicting Interaction Energies...", flush=True)
         time_predenergy_start = time.time()
-        inp_chunks = [data_loader.get_data(inds_i) for inds_i in inds_chunks]
-        preds = np.concatenate([test_batch(self.model, inp_i) for inp_i in inp_chunks], axis=0)
+        inp_batches = [data_loader.get_data(inds_i) for inds_i in inds_batches]
+        preds = np.concatenate([test_batch(self.model, inp_i) for inp_i in inp_batches], axis=0)
         dt_predenergy = time.time() - time_predenergy_start
-        print(f"Done in {dt_predenergy:.2f} seconds", flush=True)
+        #print(f"Done in {dt_predenergy:.2f} seconds", flush=True)
 
         return np.array(preds)
 
-    def predict_pairs(self, dimers):
+    def predict_pairs(self, dimers, batch_size=200):
 
         N = len(dimers)
 
         inds = np.arange(N)
         # TODO: replaced hardcoded 200 molecules. Probably want a data_loader.get_large_batch
 
-        inds_chunks = [inds[i*200:min((i+1)*200,N)] for i in range(math.ceil(N / 200))]
+        dimer_inds_batches = [inds[i*batch_size:min((i+1)*batch_size,N)] for i in range(math.ceil(N / batch_size))]
 
-        print("Processing Dataset...", flush=True)
+        #print("Processing Dataset...", flush=True)
         time_loaddata_start = time.time()
-        data_loader = PairDataLoader(dimers, None, 5.0, self.model.get_config()["r_cut_im"])
+        data_loader = PairDataLoader(dimers, None, r_cut=5.0, r_cut_im=self.model.get_config()["r_cut_im"])
         dt_loaddata = time.time() - time_loaddata_start
-        print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
+        #print(f"...Done in {dt_loaddata:.2f} seconds", flush=True)
 
-        print("\nPredicting Interaction Energies...", flush=True)
-        time_predenergy_start = time.time()
-        inp_chunks = [data_loader.get_data(inds_i) for inds_i in inds_chunks]
-        sizes_chunks = [data_loader.get_sizes(inds_i) for inds_i in inds_chunks]
-        preds = [test_batch_pairs(self.model, inp_i) for inp_i in inp_chunks]
-        
-        dimer_preds_chunks = [pred[0] for pred in preds]
-        pair_preds_chunks = [pred[1] for pred in preds]
-        pair_mtp_sr_chunks = [pred[2] for pred in preds]
-        pair_mtp_lr_chunks = [pred[3] for pred in preds]
+        pair_energies = []
 
-        dimer_preds = np.concatenate(dimer_preds_chunks, axis=0)
-        dt_predenergy = time.time() - time_predenergy_start
-        print(f"Done in {dt_predenergy:.2f} seconds", flush=True)
+        for dimer_inds_batch in dimer_inds_batches:
 
-        for chunk_ind in range(len(inp_chunks)):
-            inp_chunk = inp_chunks[chunk_ind]
-            inds_chunk = inds_chunks[chunk_ind]
-            sizes_chunk = sizes_chunks[chunk_ind]
+            pair_energies_batch = []
+            
+            inp_batch = data_loader.get_data(dimer_inds_batch)
+            sizes_batch = data_loader.get_sizes(dimer_inds_batch)
+            dimer_preds, pair_preds, pair_mtp_sr, pair_mtp_lr = test_batch_pairs(self.model, inp_batch)
 
-            pair_preds_chunk = pair_preds_chunks[chunk_ind]
-            pair_mtp_sr_chunk = pair_mtp_sr_chunks[chunk_ind]
-            pair_mtp_lr_chunk = pair_mtp_lr_chunks[chunk_ind]
+            indA_to_dimer = []
+            indB_to_dimer = []
+            indA_to_atom = []
+            indB_to_atom = []
 
-            dimer_inds = inp_chunk["dimer_ind"]
-            dimer_inds_lr = inp_chunk["dimer_ind_lr"]
+            for dimer_ind, (sizeA, sizeB) in enumerate(sizes_batch):
+                indA_to_dimer.append(np.full((sizeA,), dimer_ind))
+                indB_to_dimer.append(np.full((sizeB,), dimer_ind))
+                indA_to_atom.append(np.arange(sizeA))
+                indB_to_atom.append(np.arange(sizeB))
+                pair_energies_batch.append(np.zeros((4, sizeA, sizeB)))
 
-            print(pair_preds_chunk.shape, pair_mtp_sr_chunk.shape, pair_mtp_lr_chunk.shape, dimer_inds.shape, dimer_inds_lr.shape)
+            indA_to_dimer = np.concatenate(indA_to_dimer)
+            indB_to_dimer = np.concatenate(indB_to_dimer)
+            indA_to_atom = np.concatenate(indA_to_atom)
+            indB_to_atom = np.concatenate(indB_to_atom)
 
-            pair_list = [np.zeros((size[0], size[1], 5)) for size in sizes_chunk]
+            indsA_sr = inp_batch["e_ABsr_source"]
+            indsB_sr = inp_batch["e_ABsr_target"]
 
+            indsA_lr = inp_batch["e_ABlr_source"]
+            indsB_lr = inp_batch["e_ABlr_target"]
 
-            for dimer_inds_loc, dimer_ind in enumerate(dimer_inds):
+            for e_pair, e_elst_sr, indA, indB in zip(pair_preds, pair_mtp_sr, indsA_sr, indsB_sr):
 
-                print(dimer_ind, pair_preds_chunk[dimer_inds_loc], pair_mtp_sr[dimer_inds_loc])
+                dimer_ind = indA_to_dimer[indA]
+                assert dimer_ind == indB_to_dimer[indB]
+                atomA = indA_to_atom[indA]
+                atomB = indB_to_atom[indB]
+                pair_energies_batch[dimer_ind][0:4, atomA, atomB] += e_pair
+                pair_energies_batch[dimer_ind][0, atomA, atomB] += e_elst_sr
 
-                pair_list[dimer_ind][0][0]
+            for e_elst_lr, indA, indB in zip(pair_mtp_lr, indsA_lr, indsB_lr):
 
-            chunk_atom_shift_a = 0
-            chunk_atom_shift_b = 0
-            dimer_ind_loc = 0
-            dimer_ind_lr_loc = 0
-            for i in range(len(inp_chunk)):
-                chunk_atom_shift_a += sizes_chunk[i][0]
-                chunk_atom_shift_b += sizes_chunk[j][1]
-            print(chunk_atom_shift_a, inp_chunks["RA"].shape, chunk_atom_shift_b, inp_chunks["RB"].shape) 
+                dimer_ind = indA_to_dimer[indA]
+                assert dimer_ind == indB_to_dimer[indB]
+                atomA = indA_to_atom[indA]
+                atomB = indB_to_atom[indB]
+                pair_energies_batch[dimer_ind][0, atomA, atomB] += e_elst_lr
 
+            pair_energies.extend(pair_energies_batch)
 
+        return pair_energies
 
-
-            #ia_total = 0, ib_total = 0
-            #ia_dimer = 0, ib_dimer = 0
-
-            #while i_dimer_ind < len(dimer_ind):
-
-            #for i, di in enumerate(dimer_ind):
-            #    pair_list[di][
-
-        #print(len(inp_chunks))
-        #print(type(inp_chunks[0]))
-        #print(inp_chunks[0].keys())
-        #print(inp_chunks[0]["dimer_ind"].shape)
-        #print(inp_chunks[0]["dimer_ind_lr"].shape)
-        #print(size_chunks)
-
-        return np.array(dimer_preds)
 
     def transfer(self, dimers_t, energies_t, dimers_v, energies_v, model_path=None, log_path=None, **kwargs):
 
@@ -699,10 +687,6 @@ def test_batch_pairs(model, inp):
 
     dimer_preds, pair_preds, pair_mtp_sr, pair_mtp_lr = model(inp, training=False)
     dimer_preds = tf.reshape(dimer_preds, [-1, 4])
-
-    print("pair_preds", pair_preds.shape)
-    print("pair_mtp_sr", pair_mtp_sr.shape)
-    print("pair_mtp_lr", pair_mtp_lr.shape)
 
     return dimer_preds, pair_preds, pair_mtp_sr, pair_mtp_lr
 
